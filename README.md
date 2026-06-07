@@ -1,6 +1,6 @@
 # Personal KB MCP
 
-[English](README.en.md) | [한국어](README.ko.md) | [中文](README.zh.md) | [日本語](README.ja.md)
+[English](README.md) | [한국어](README.ko.md) | [中文](README.zh.md) | [日本語](README.ja.md)
 
 Private MCP server for a Git-backed Obsidian/Markdown knowledge base.
 

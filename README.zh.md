@@ -1,6 +1,6 @@
 # Personal KB MCP
 
-[English](README.en.md) | [한국어](README.ko.md) | [中文](README.zh.md) | [日本語](README.ja.md)
+[English](README.md) | [한국어](README.ko.md) | [中文](README.zh.md) | [日本語](README.ja.md)
 
 面向 Git 托管的 Obsidian/Markdown 知识库的私有 MCP 服务器。
 

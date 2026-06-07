@@ -1,6 +1,6 @@
 # Personal KB MCP
 
-[English](README.en.md) | [한국어](README.ko.md) | [中文](README.zh.md) | [日本語](README.ja.md)
+[English](README.md) | [한국어](README.ko.md) | [中文](README.zh.md) | [日本語](README.ja.md)
 
 Git으로 관리되는 Obsidian/Markdown 지식 베이스를 위한 개인용 MCP 서버입니다.
 
