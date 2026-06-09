@@ -15,8 +15,8 @@
 - `atomic=True` batch write 的文件 rollback
 - write 结果中的 source hash、content hash，以及可选的 git commit hash
 - 写入 note 的 provenance trailer
-- vault status、graph health 和 metrics snapshot
-- 通过 `VectorIndex` 和 `NullVectorIndex` 提供 Vector DB 扩展点
+- 通过 `GET /metrics` REST endpoint 合并提供 vault 与 graph counters
+- 通过 `kb_search_notes` MCP tool 搜索 LLM Wiki Markdown
 
 ## 本地设置
 
@@ -153,13 +153,13 @@ Claude 还支持 `--scope local|user|project`。Codex 还支持 `--config /path/
 
 该 skill 会指示 agent：
 
-- 写入前调用 MCP status/health tool。
-- vault 可读时，先查看 `SCHEMA.md`、`index.md` 和 `log.md` 进行 orientation。
+- 写入前使用 `kb_search_notes` 搜索已有 Markdown wiki page。
+- 通过直接文件访问或 `kb_search_notes` snippet，基于 `SCHEMA.md`、`index.md` 和 `log.md` 进行 orientation。
 - 通过 `kb_write_note` 写入完整 Markdown note。
 - 使用返回的 `content_hash` 作为下一次 optimistic concurrency 的 `if_hash`。
 - 保持 raw source immutable，并在 durable wiki 变更时更新 `index.md` 与 `log.md`。
 
-当前服务器暴露的 MCP tool 是 `kb_write_note`、`kb_vault_status`、`kb_graph_health` 和 `kb_metrics`。
+当前服务器暴露的 MCP tool 是 `kb_write_note` 和 `kb_search_notes`。Vault/graph counters 通过 REST `GET /metrics` endpoint 暴露。
 
 ## 验证
 

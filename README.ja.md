@@ -15,8 +15,8 @@ Git 管理された Obsidian/Markdown ナレッジベース向けのプライベ
 - `atomic=True` batch write のファイル rollback
 - write 結果に含まれる source hash、content hash、任意の git commit hash
 - 書き込まれた note の provenance trailer
-- vault status、graph health、metrics snapshot
-- `VectorIndex` と `NullVectorIndex` による Vector DB 拡張ポイント
+- `GET /metrics` REST endpoint で vault と graph counters を統合して提供
+- `kb_search_notes` MCP tool による LLM Wiki Markdown 検索
 
 ## ローカル設定
 
@@ -153,13 +153,13 @@ Claude は `--scope local|user|project` もサポートします。Codex は `--
 
 この skill は agent に次を指示します：
 
-- 書き込み前に MCP status/health tool を呼び出す。
-- vault が読める場合は `SCHEMA.md`、`index.md`、`log.md` を確認して orientation する。
+- 書き込み前に `kb_search_notes` で既存 Markdown wiki page を検索する。
+- 直接ファイルアクセスまたは `kb_search_notes` snippet で `SCHEMA.md`、`index.md`、`log.md` を基準に orientation する。
 - `kb_write_note` を通じて完全な Markdown note を書き込む。
 - optimistic concurrency のため、返された `content_hash` を次の `if_hash` として使う。
 - raw source は immutable に保ち、durable wiki 変更では `index.md` と `log.md` を更新する。
 
-現在サーバーが公開している MCP tool は `kb_write_note`、`kb_vault_status`、`kb_graph_health`、`kb_metrics` です。
+現在サーバーが公開している MCP tool は `kb_write_note` と `kb_search_notes` です。Vault/graph counters は REST `GET /metrics` endpoint で公開します。
 
 ## 検証
 

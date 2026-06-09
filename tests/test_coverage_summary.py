@@ -3,7 +3,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+def _project_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "pyproject.toml").exists():
+            return parent
+    raise RuntimeError("project root not found")
+
+
+PROJECT_ROOT = _project_root()
 SUMMARY_SCRIPT = PROJECT_ROOT / "scripts" / "coverage_summary.py"
 
 
@@ -23,10 +31,8 @@ def test_커버리지_요약_스크립트는_총_커버리지와_하위_파일�
                     "num_branches": 40,
                 },
                 "files": {
-                    "src/personal_kb_mcp/main.py": {
-                        "summary": {"percent_covered": 80.0, "missing_lines": 1}
-                    },
-                    "src/personal_kb_mcp/config.py": {
+                    "src/main.py": {"summary": {"percent_covered": 80.0, "missing_lines": 1}},
+                    "src/common/config.py": {
                         "summary": {"percent_covered": 100.0, "missing_lines": 0}
                     },
                 },
@@ -47,4 +53,4 @@ def test_커버리지_요약_스크립트는_총_커버리지와_하위_파일�
     assert "## 테스트 커버리지" in completed.stdout
     assert "96.93%" in completed.stdout
     assert "80%" in completed.stdout
-    assert "src/personal_kb_mcp/main.py" in completed.stdout
+    assert "src/main.py" in completed.stdout

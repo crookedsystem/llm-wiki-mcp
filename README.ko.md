@@ -15,8 +15,8 @@ Git으로 관리되는 Obsidian/Markdown 지식 베이스를 위한 개인용 MC
 - `atomic=True` batch write의 파일 rollback
 - write 결과의 source hash, content hash, 선택적 git commit hash
 - 작성된 note의 provenance trailer
-- vault status, graph health, metrics snapshot
-- `VectorIndex`와 `NullVectorIndex`를 통한 Vector DB 확장 지점
+- `GET /metrics` REST endpoint에서 vault와 graph counter 통합 제공
+- `kb_search_notes` MCP tool을 통한 LLM Wiki Markdown 검색
 
 ## 로컬 설정
 
@@ -153,13 +153,13 @@ Claude는 `--scope local|user|project`도 지원합니다. Codex는 `--config /p
 
 Skill은 agent에게 다음을 지시합니다:
 
-- 쓰기 전에 MCP status/health tool 호출
-- vault를 읽을 수 있으면 `SCHEMA.md`, `index.md`, `log.md`를 기준으로 orientation 수행
+- 쓰기 전에 `kb_search_notes`로 기존 Markdown wiki page 검색
+- 직접 파일 접근 또는 `kb_search_notes` snippet으로 `SCHEMA.md`, `index.md`, `log.md` 기준 orientation 수행
 - `kb_write_note`를 통해 완전한 Markdown note 작성
 - optimistic concurrency를 위해 반환된 `content_hash`를 다음 `if_hash`로 사용
 - raw source는 immutable하게 유지하고 durable wiki 변경 시 `index.md`와 `log.md` 업데이트
 
-현재 서버가 노출하는 MCP tool은 `kb_write_note`, `kb_vault_status`, `kb_graph_health`, `kb_metrics`입니다.
+현재 서버가 노출하는 MCP tool은 `kb_write_note`, `kb_search_notes`입니다. Vault/graph counter는 REST `GET /metrics` endpoint로 제공합니다.
 
 ## 검증
 

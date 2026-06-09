@@ -15,8 +15,8 @@ Private MCP server for a Git-backed Obsidian/Markdown knowledge base.
 - Batch writes with `atomic=True` file rollback
 - Source hash, content hash, and optional git commit hash in write results
 - Provenance trailer on written notes
-- Vault status, graph health, and metrics snapshots
-- Vector DB extension point via `VectorIndex` and `NullVectorIndex`
+- REST metrics endpoint at `GET /metrics` combining vault and graph counters
+- LLM Wiki Markdown search through the `kb_search_notes` MCP tool
 
 ## Local setup
 
@@ -153,13 +153,13 @@ Claude also supports `--scope local|user|project`. Codex also supports `--config
 
 The skill tells agents to:
 
-- Call MCP status/health tools before writing.
-- Orient on `SCHEMA.md`, `index.md`, and `log.md` when the vault is readable.
+- Use `kb_search_notes` to search existing Markdown wiki pages before writing.
+- Orient on `SCHEMA.md`, `index.md`, and `log.md` with direct file access or `kb_search_notes` snippets.
 - Write complete Markdown notes through `kb_write_note`.
 - Use returned `content_hash` as the next `if_hash` for optimistic concurrency.
 - Keep raw sources immutable and update `index.md` plus `log.md` for durable wiki changes.
 
-Current MCP tools exposed by the server are `kb_write_note`, `kb_vault_status`, `kb_graph_health`, and `kb_metrics`.
+Current MCP tools exposed by the server are `kb_write_note` and `kb_search_notes`. Vault/graph counters are exposed through the REST `GET /metrics` endpoint.
 
 ## Validate
 

@@ -25,7 +25,7 @@ jobs:
       - name: Run tests with coverage gate
         run: |
           uv run pytest -vv \
-            --cov=personal_kb_mcp \
+            --cov=src \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
             --cov-report=json:coverage.json \

@@ -1,6 +1,14 @@
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+def _project_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "pyproject.toml").exists():
+            return parent
+    raise RuntimeError("project root not found")
+
+
+PROJECT_ROOT = _project_root()
 CI_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "ci.yml"
 PYPROJECT = PROJECT_ROOT / "pyproject.toml"
 
@@ -31,7 +39,7 @@ def test_ci는_mypy와_커버리지_80퍼센트_게이트를_강제한다() -> N
     # When: merge gate로 사용할 타입 검사와 테스트 커버리지 기준을 확인한다.
     required_fragments = [
         "uv run mypy src tests",
-        "--cov=personal_kb_mcp",
+        "--cov=src",
         "--cov-fail-under=80",
         "--cov-report=term-missing",
         "--cov-report=json:coverage.json",

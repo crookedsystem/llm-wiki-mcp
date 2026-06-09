@@ -5,7 +5,7 @@ description: Use personal-kb-mcp from Hermes/Hermess, Claude Code, or Codex to m
 
 # Personal KB LLM Wiki
 
-Use the running `personal-kb-mcp` server as the write/status bridge to a Git-backed Obsidian or Markdown vault, then maintain that vault with the LLM Wiki pattern: raw sources stay immutable, synthesized pages stay interlinked, and every durable change updates navigation and log files.
+Use the running `personal-kb-mcp` server as the write/search bridge to a Git-backed Obsidian or Markdown vault, then maintain that vault with the LLM Wiki pattern: raw sources stay immutable, synthesized pages stay interlinked, and every durable change updates navigation and log files.
 
 This is the single canonical skill for Hermes/Hermess, Claude Code, and Codex. The setup scripts copy this same skill into each agent's expected skill directory; only MCP config format, install path, and tool-name prefix differ by agent.
 
@@ -20,17 +20,16 @@ Do not use it for one-off answers that should not be saved, or when the MCP serv
 The underlying server exposes these tool names:
 
 - `kb_write_note(note_path, content, if_hash?)` — write a complete note inside the configured vault. Existing notes require optimistic concurrency.
-- `kb_vault_status()` — note count, vault existence, and basic vault status.
-- `kb_graph_health()` — broken-link/orphan-style graph health snapshot.
-- `kb_metrics()` — note/link/size metrics snapshot.
+- `kb_search_notes(query, limit?, path_prefix?)` — search the Markdown LLM Wiki vault and return ranked paths, titles, page types, tags, content hashes, and line snippets.
 
+Vault and graph counters are exposed as a REST API endpoint at `GET /metrics`, not as MCP tools.
 Agent UIs may prefix MCP tool names. If you see prefixed names, map them back to the raw tool names above.
 
 ## First actions in a session
 
-1. Confirm the MCP server is connected by calling the status or metrics tool.
-2. Orient before writing. If the vault is directly readable through file tools, read `SCHEMA.md`, `index.md`, and the recent tail of `log.md`. If the vault is not directly readable, use the status/health tools and ask the user for the relevant existing page content before updating existing notes.
-3. Search for existing pages before creating new ones whenever the agent has file/search access to the vault. Avoid duplicate entity or concept pages.
+1. Confirm the MCP server is connected by listing tools or calling `kb_search_notes` with a narrow orientation query such as `index`.
+2. Orient before writing. If the vault is directly readable through file tools, read `SCHEMA.md`, `index.md`, and the recent tail of `log.md`. If the vault is not directly readable, use `kb_search_notes` for `SCHEMA`, `index`, `log`, and topic-specific searches before updating notes.
+3. Search for existing pages before creating new ones. Avoid duplicate entity or concept pages.
 
 ## Write policy
 
@@ -66,9 +65,7 @@ Agent UIs may prefix MCP tool names. If you see prefixed names, map them back to
 Hermes prefixes native MCP tools as `mcp_<server>_<tool>`. With the default `personal_kb` server name, look for:
 
 - `mcp_personal_kb_kb_write_note`
-- `mcp_personal_kb_kb_vault_status`
-- `mcp_personal_kb_kb_graph_health`
-- `mcp_personal_kb_kb_metrics`
+- `mcp_personal_kb_kb_search_notes`
 
 If these tools do not appear, run `hermes mcp list`, `hermes mcp test personal_kb`, then restart the Hermes session or gateway. In an existing session, use `/reload-mcp` if available.
 
