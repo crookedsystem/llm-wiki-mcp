@@ -39,7 +39,7 @@ def test_ci는_mypy와_커버리지_80퍼센트_게이트를_강제한다() -> N
     # When: merge gate로 사용할 타입 검사와 테스트 커버리지 기준을 확인한다.
     required_fragments = [
         "uv run mypy src tests",
-        "--cov=personal_kb_mcp",
+        "--cov=src",
         "--cov-fail-under=80",
         "--cov-report=term-missing",
         "--cov-report=json:coverage.json",

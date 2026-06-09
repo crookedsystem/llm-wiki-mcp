@@ -3,7 +3,7 @@ from pathlib import Path
 
 from starlette.testclient import TestClient
 
-from config import Settings
+from common.config import Settings
 from vault.infrastructure.api.fastapi_app import create_fastapi_app
 
 

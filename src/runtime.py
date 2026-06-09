@@ -1,8 +1,10 @@
+"""Build process-local application services from settings."""
+
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
 
-from config import Settings
+from common.config import Settings
 from vault.entity.vault_path import VaultPaths
 from vault.infrastructure.repository.vault_note_repository import (
     VaultNoteRepository,

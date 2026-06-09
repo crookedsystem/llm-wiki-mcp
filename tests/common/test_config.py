@@ -2,7 +2,7 @@ from pathlib import Path
 
 from pytest import MonkeyPatch
 
-from config import Settings
+from common.config import Settings
 
 
 def test_설정은_명시하지_않은_값에_안전한_기본값을_사용한다(

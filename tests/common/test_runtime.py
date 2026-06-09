@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from config import Settings
+from common.config import Settings
 from runtime import create_runtime
 
 

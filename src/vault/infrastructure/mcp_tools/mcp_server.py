@@ -2,7 +2,8 @@ from typing import Literal, cast
 
 from mcp.server.fastmcp import FastMCP
 
-from config import Settings
+from common.config import Settings
+from runtime import create_runtime
 from vault.dto.request.search_notes_request import SearchNotesRequest
 from vault.dto.request.write_note_request import WriteNoteRequest
 from vault.dto.response.search_notes_response import (
@@ -15,7 +16,6 @@ from vault.dto.response.write_note_response import (
 )
 from vault.service.vault_search_service import VaultSearchService
 from vault.service.vault_write_service import VaultWriteService
-from runtime import create_runtime
 
 McpLogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 

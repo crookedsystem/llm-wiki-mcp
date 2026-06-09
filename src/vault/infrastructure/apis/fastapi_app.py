@@ -5,7 +5,7 @@ from typing import Annotated, cast
 from fastapi import Depends, FastAPI, Request
 from mcp.server.fastmcp import FastMCP
 
-from config import Settings
+from common.config import Settings
 from runtime import Runtime, create_runtime
 from vault.dto.response.health_response import HealthResponse
 from vault.dto.response.metrics_response import (

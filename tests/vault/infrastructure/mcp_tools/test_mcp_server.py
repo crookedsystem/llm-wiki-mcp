@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 from typing import TypedDict, cast
 
-from config import Settings
+from common.config import Settings
 from vault.infrastructure.mcp_tools.mcp_server import create_mcp_server
 
 
