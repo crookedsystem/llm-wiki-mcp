@@ -28,6 +28,13 @@ def test_llm_wiki_skill_embeds_content_modeling_guidance() -> None:
         "Raw write contract",
         "kb_validate_vault",
         "kb_reconcile_taxonomy",
+        "## Write-time graph maintenance",
+        "build a write set from `wiki_map`, `issue_candidates`, and `update_suggestions`",
+        "## Entity update policy",
+        "Entity pages are canonical profiles, not one-source summaries.",
+        "## Broken-link self-repair policy",
+        "`broken_wikilink`: if a canonical target exists",
+        "Do not use `kb_reconcile_taxonomy` for link repair",
     ]
 
     for fragment in required_fragments:

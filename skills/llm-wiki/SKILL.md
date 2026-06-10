@@ -169,6 +169,17 @@ Tags must be declared in this file before a page can use them.
 - Do not create pages for passing mentions.
 - Split pages over about 200 lines.
 - Mark contradictions with `contested: true` and explain both claims with dates and sources.
+
+## Entity update policy
+- Treat `entities/` pages as canonical profiles for real-world people, orgs, products, models, projects, standards, APIs, and datasets.
+- Search existing entity pages before creating a new one. Merge into the existing page when aliases, title, slug, sources, or relationships point to the same real-world entity.
+- Preserve dated facts instead of silently overwriting them. If sources conflict, lower `confidence`, set `contested: true`, and explain both claims.
+- Update `sources`, `## Sources`, `## Relationships`, backlinks, `index.md`, and `log.md` when the entity changes.
+
+## Link repair policy
+- On every write, use `kb_wiki_context` issue candidates to repair relevant `broken_wikilink`, `ambiguous_wikilink`, `missing_backlink`, `orphan_page`, `underlinked_page`, `unindexed_page`, `missing_raw_source`, and `duplicate_title` issues.
+- Replace broken links with a canonical existing page when one exists; create a new page only when page thresholds are met; otherwise use plain text or link to a broader existing page.
+- After writing, re-check context for the changed paths and fix any schema or graph damage introduced by the update.
 ```
 
 ## index.md structure
@@ -263,12 +274,52 @@ Raw files are source archives. Do not edit a raw body after creation. If the sou
 
 - `kb_write_note` writes the full note body and validates it against the schema first. Treat schema validation errors as repair instructions: fix the content and retry; do not bypass validation.
 - For updates, reconstruct the full target file and pass the current full-file hash as `if_hash`.
+- Before every meaningful write, call `kb_wiki_context` and build a write set from `wiki_map`, `issue_candidates`, and `update_suggestions`: target note, related notes that need backlinks or repaired links, `index.md`, `log.md`, and `SCHEMA.md` if tags change.
 - Keep raw sources under `raw/` immutable. Corrections and synthesis belong in wiki pages such as `entities/`, `concepts/`, `comparisons/`, or `queries/`.
 - Every meaningful write should update `index.md` and append a concise entry to `log.md` unless the user explicitly requests a draft-only note.
 - Use lowercase kebab-case note paths such as `concepts/llm-wiki.md` and `entities/anthropic.md`.
 - Prefer `[[wikilinks]]` between wiki pages. New synthesized pages should have at least two useful outbound links when possible.
 - Preserve YAML frontmatter on wiki pages: `title`, `created`, `updated`, `type`, `tags`, `sources`, `confidence`, and `contested`.
+- After writes, rerun `kb_wiki_context` for graph health around changed paths and `kb_validate_vault` for schema/raw-hash hygiene. Fix issues introduced by the write before reporting success.
 - Do not create entity/comparison/concept batches unless the user explicitly asks for content migration. Schema repair and content synthesis are different operations.
+
+## Write-time graph maintenance
+
+Use the new context tools to strengthen the graph while writing, not as a separate cleanup chore:
+
+1. **Orient:** `kb_wiki_context` returns `parsed_schema`, `wiki_map`, `issue_candidates`, and `update_suggestions`. Treat this as the current wiki graph.
+2. **Resolve identity:** Use `wiki_map.pages_by_type.entity`, entity titles, slugs, sources, inbound/outbound links, and `kb_search_notes` hits to decide whether the subject already has a canonical page.
+3. **Plan the write set:** Include every page whose meaning or navigation changes: the main note, reciprocal backlink targets, duplicate/alias pages to merge or disambiguate, `index.md`, `log.md`, and `SCHEMA.md` when taxonomy changes.
+4. **Apply only semantic repairs:** `update_suggestions` are candidate repairs. Apply suggestions when the relationship is meaningful; skip noisy backlinks that would not help future retrieval.
+5. **Verify:** Re-run `kb_wiki_context` after writing and make sure relevant `broken_wikilink`, `ambiguous_wikilink`, `missing_backlink`, `orphan_page`, `underlinked_page`, `unindexed_page`, `missing_raw_source`, and `duplicate_title` candidates were resolved or intentionally left with a log note.
+
+## Entity update policy
+
+Entity pages are canonical profiles, not one-source summaries. When a write mentions a person, org, product, model, project, protocol, dataset, standard, or API:
+
+1. Search first: inspect `wiki_map.pages_by_type.entity`, `index.md`, `kb_search_notes` results, and duplicate-title candidates before creating `entities/<slug>.md`.
+2. Update the existing entity when aliases, renamed products, title variants, source URLs, relationships, or surrounding pages point to the same real-world thing. Use a stable canonical slug; use display aliases like `[[entities/andrej-karpathy|Karpathy]]` when prose needs a shorter name.
+3. Create a new entity only when no canonical page exists, the entity meets the page threshold, and it is not merely a passing mention.
+4. Preserve history: add dated, sourced facts rather than silently replacing older facts. If a source changes an earlier claim, say what changed and cite both sources.
+5. Handle conflicts explicitly: set `contested: true`, lower `confidence`, and explain competing claims with dates/sources instead of picking a winner without evidence.
+6. Keep relationships current: add or prune `## Relationships` entries, update reciprocal backlinks when useful, and connect the entity to relevant concepts/comparisons/queries.
+7. Keep provenance current: add new raw paths to `sources:` and `## Sources`; remove a source only if the page no longer relies on it.
+8. If duplicate entity pages exist, merge or disambiguate them before adding more content. Do not spread one entity across multiple pages.
+9. Always bump `updated`, refresh the `index.md` one-line summary if the entity's meaning changed, and append `log.md` with created/updated paths.
+
+## Broken-link self-repair policy
+
+Treat broken links as graph damage to repair during the same write when they touch the task area:
+
+- `broken_wikilink`: if a canonical target exists, rewrite to the exact target path (`[[entities/openai]]`) or an aliased link (`[[entities/openai|OpenAI]]`). If no target exists, create one only when page thresholds are met; otherwise convert the link to plain text or link to a broader existing page.
+- `ambiguous_wikilink`: replace the link with an explicit path or alias. If ambiguity reflects duplicate pages, merge or disambiguate before writing new content.
+- `missing_backlink`: add a backlink only when it helps navigation or explains a durable relationship. Avoid mechanical backlinks that make pages noisy.
+- `underlinked_page` / `orphan_page`: use related paths from `update_suggestions` plus source semantics to add meaningful links, or log/archive pages that should not remain active.
+- `unindexed_page`: add the page to the correct `index.md` section with a one-line summary.
+- `missing_raw_source`: add the missing raw note, fix the source path, or remove the citation if the page does not rely on that source.
+- `duplicate_title`: merge same-entity/same-concept pages or rename them with disambiguating slugs before creating more links.
+
+Do not use `kb_reconcile_taxonomy` for link repair; it is for tag taxonomy decisions. Use `kb_validate_vault` for schema/frontmatter/raw-hash hygiene and `kb_wiki_context` for graph/link health.
 
 ## MCP context-first workflow
 
