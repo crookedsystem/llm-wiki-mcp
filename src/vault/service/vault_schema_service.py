@@ -392,7 +392,16 @@ class VaultSchemaService(FrozenModel):
             )
 
         confidence = _scalar_string(frontmatter.get("confidence"))
-        if confidence is not None and confidence not in {"high", "medium", "low"}:
+        if "confidence" in frontmatter and confidence is None:
+            issues.append(
+                SchemaValidationIssue(
+                    code="invalid_field_type",
+                    path=note_path,
+                    field="confidence",
+                    message="confidence must be a YAML string",
+                )
+            )
+        elif confidence is not None and confidence not in {"high", "medium", "low"}:
             issues.append(
                 SchemaValidationIssue(
                     code="invalid_confidence",
@@ -431,6 +440,17 @@ class VaultSchemaService(FrozenModel):
                         message=f"Raw notes must include frontmatter field: {field_name}",
                     )
                 )
+
+        source_url = _scalar_string(frontmatter.get("source_url"))
+        if "source_url" in frontmatter and source_url is None:
+            issues.append(
+                SchemaValidationIssue(
+                    code="invalid_field_type",
+                    path=note_path,
+                    field="source_url",
+                    message="source_url must be a YAML string",
+                )
+            )
 
         ingested = _date_string(frontmatter.get("ingested"))
         if "ingested" in frontmatter and (ingested is None or not DATE_PATTERN.match(ingested)):
@@ -542,7 +562,7 @@ class VaultSchemaService(FrozenModel):
 
         for page_path in page_paths:
             for target in _extract_wikilink_targets(page_drafts[page_path].body):
-                resolved_targets = _resolve_wikilink_target(target, page_paths)
+                resolved_targets = _resolve_wikilink_target(target, page_drafts)
                 if len(resolved_targets) == 1:
                     resolved_target = resolved_targets[0]
                     if (
@@ -1000,18 +1020,22 @@ def _extract_wikilink_targets(body: str) -> list[str]:
     return sorted(targets)
 
 
-def _resolve_wikilink_target(target: str, page_paths: list[str]) -> list[str]:
+def _resolve_wikilink_target(
+    target: str,
+    page_drafts: dict[str, WikiPageDraft],
+) -> list[str]:
     normalized = target.strip().strip("/")
     if normalized.endswith(".md"):
         normalized = normalized[:-3]
     normalized_lower = normalized.lower()
     candidates: set[str] = set()
-    for page_path in page_paths:
+    for page_path, draft in page_drafts.items():
         page_without_suffix = page_path[:-3] if page_path.endswith(".md") else page_path
         values = {
             page_path,
             page_without_suffix,
             Path(page_path).stem,
+            draft.title,
         }
         if normalized in values or normalized_lower in {value.lower() for value in values}:
             candidates.add(page_path)

@@ -156,6 +156,38 @@ contested: false
     ]
 
 
+def test_validate_write_rejects_non_string_synthesized_confidence(
+    tmp_path: Path,
+) -> None:
+    # Given: schema가 준비된 LLM Wiki vault가 있다.
+    vault_root = tmp_path / "vault"
+    _write_schema(vault_root)
+    schema_service = VaultSchemaService(note_repository=VaultNoteRepository(root=vault_root))
+
+    # When: synthesized page confidence가 문자열이 아니다.
+    result = schema_service.validate_write(
+        "concepts/agent-memory.md",
+        """---
+title: Agent Memory
+created: 2026-06-10
+updated: 2026-06-10
+type: concept
+tags: []
+sources: [raw/hermes/source.md]
+confidence: [medium]
+contested: false
+---
+
+# Agent Memory
+""",
+    )
+
+    # Then: required field 존재만으로 통과시키지 않고 타입 오류를 보고한다.
+    assert [(issue.code, issue.field) for issue in result.issues] == [
+        ("invalid_field_type", "confidence")
+    ]
+
+
 def test_validate_write_requires_raw_frontmatter_and_body_sha256(tmp_path: Path) -> None:
     # Given: schema가 준비된 LLM Wiki vault가 있다.
     vault_root = tmp_path / "vault"
@@ -182,6 +214,32 @@ sha256: bad
     # Then: raw metadata와 sha256 mismatch를 hard error로 보고한다.
     assert [issue.code for issue in missing_raw_metadata.issues] == ["missing_frontmatter"]
     assert [issue.code for issue in wrong_hash.issues] == ["raw_sha256_mismatch"]
+
+
+def test_validate_write_rejects_non_string_raw_source_url(tmp_path: Path) -> None:
+    # Given: schema가 준비된 LLM Wiki vault가 있다.
+    vault_root = tmp_path / "vault"
+    _write_schema(vault_root)
+    schema_service = VaultSchemaService(note_repository=VaultNoteRepository(root=vault_root))
+
+    # When: raw source_url frontmatter가 문자열이 아니다.
+    result = schema_service.validate_write(
+        "raw/hermes/session.md",
+        """---
+source_url: [hermes-session:abc]
+ingested: 2026-06-10
+sha256: abc
+---
+
+# Raw Session
+""",
+    )
+
+    # Then: source identifier로 사용할 수 없는 값을 타입 오류로 보고한다.
+    assert [(issue.code, issue.field) for issue in result.issues] == [
+        ("invalid_field_type", "source_url"),
+        ("raw_sha256_mismatch", "sha256"),
+    ]
 
 
 def test_validate_write_rejects_non_string_raw_sha256(tmp_path: Path) -> None:
@@ -420,6 +478,42 @@ def test_wiki_context_surfaces_map_link_issues_and_update_suggestions(
     assert ("connect_or_archive_page", "concepts/orphan-topic.md") in suggestions
     assert ("add_index_entry", "entities/hermes-agent.md") in suggestions
     assert ("synthesize_or_link_raw_source", "raw/articles/unused.md") in suggestions
+
+
+def test_wiki_context_resolves_wikilinks_by_page_title(tmp_path: Path) -> None:
+    # Given: 다른 note가 path stem이 아닌 frontmatter title로 wikilink를 건다.
+    vault_root = tmp_path / "vault"
+    _write_schema(vault_root)
+    (vault_root / "index.md").write_text("# Wiki Index\n", encoding="utf-8")
+    _write_raw_note(vault_root / "raw" / "articles" / "source.md", "Source body\n")
+    _write_synthesized_note(
+        vault_root / "concepts" / "agent-memory.md",
+        title="Agent Memory",
+        page_type="concept",
+        tags=["agent-memory"],
+        sources=["raw/articles/source.md"],
+        body="# Agent Memory\n\nTarget page.\n",
+    )
+    _write_synthesized_note(
+        vault_root / "concepts" / "working-memory.md",
+        title="Working Memory",
+        page_type="concept",
+        tags=["agent-memory"],
+        sources=["raw/articles/source.md"],
+        body="# Working Memory\n\nLinks to [[Agent Memory]].\n",
+    )
+
+    # When: wiki context를 만든다.
+    context = VaultSchemaService(
+        note_repository=VaultNoteRepository(root=vault_root)
+    ).wiki_context()
+
+    # Then: title-based Obsidian link를 broken link로 보고하지 않는다.
+    pages = {page.path: page for page in context.wiki_map.pages}
+    assert pages["concepts/working-memory.md"].outbound_links == [
+        "concepts/agent-memory.md"
+    ]
+    assert "broken_wikilink" not in {issue.code for issue in context.issue_candidates}
 
 
 def test_reconcile_taxonomy_supports_dry_run_then_schema_apply(tmp_path: Path) -> None:
