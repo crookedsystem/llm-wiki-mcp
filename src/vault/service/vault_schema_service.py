@@ -815,9 +815,7 @@ def _extract_allowed_types(content: str) -> list[str]:
     if match is None:
         return []
     return [
-        token
-        for token in _extract_tags_from_text(match.group(1))
-        if token in DEFAULT_ALLOWED_TYPES
+        token for token in _extract_tags_from_text(match.group(1)) if token in DEFAULT_ALLOWED_TYPES
     ]
 
 
