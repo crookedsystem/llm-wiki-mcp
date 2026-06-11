@@ -27,6 +27,7 @@ from vault.service.result.schema_validation_result import (
     ValidationSummary,
     VaultValidationResult,
 )
+from vault.service.result.taxonomy_reconcile_result import TaxonomyReconcileResult
 from vault.service.result.wiki_context_result import (
     WikiContext,
     WikiContextHealth,
@@ -38,6 +39,7 @@ from vault.service.result.wiki_context_result import (
     WikiUpdateSuggestion,
 )
 from vault.service.vault_schema_parser import parse_schema_document
+from vault.service.vault_taxonomy_reconcile_service import VaultTaxonomyReconcileService
 
 
 class VaultSchemaService(FrozenModel):
@@ -142,6 +144,16 @@ class VaultSchemaService(FrozenModel):
             issue_candidates=issue_candidates,
             update_suggestions=update_suggestions,
         )
+
+    def reconcile_taxonomy(
+        self,
+        *,
+        apply: bool = False,
+        decisions: dict[str, object] | None = None,
+    ) -> TaxonomyReconcileResult:
+        return VaultTaxonomyReconcileService(
+            note_repository=self.note_repository
+        ).reconcile_taxonomy(apply=apply, decisions=decisions)
 
     def _validate_write_issues(self, note_path: str, content: str) -> list[SchemaValidationIssue]:
         if note_path == "SCHEMA.md":

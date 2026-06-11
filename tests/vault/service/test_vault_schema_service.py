@@ -889,3 +889,46 @@ sha256: {compute_sha256(raw_body)}
         issue.code == "raw_source_without_synthesis" and issue.path == "raw/articles/source.md"
         for issue in context.issue_candidates
     )
+
+
+def test_reconcile_taxonomy_supports_dry_run_then_schema_apply(tmp_path: Path) -> None:
+    # Given: page가 SCHEMA.md에 없는 tag를 사용 중이다.
+    vault_root = tmp_path / "vault"
+    _write_schema(vault_root)
+    (vault_root / "concepts").mkdir()
+    page_path = vault_root / "concepts" / "agent-harness.md"
+    page_path.write_text(
+        """---
+title: Agent Harness
+created: 2026-06-10
+updated: 2026-06-10
+type: concept
+tags: [agent-harness]
+sources: [raw/hermes/source.md]
+confidence: medium
+contested: false
+---
+
+# Agent Harness
+
+Body that must not change.
+""",
+        encoding="utf-8",
+    )
+    schema_service = VaultSchemaService(note_repository=VaultNoteRepository(root=vault_root))
+    before_page = page_path.read_text(encoding="utf-8")
+
+    # When: dry-run 후 add decision을 apply한다.
+    dry_run = schema_service.reconcile_taxonomy(apply=False)
+    applied = schema_service.reconcile_taxonomy(
+        apply=True,
+        decisions={"add": ["agent-harness"]},
+    )
+
+    # Then: dry-run은 변경하지 않고, apply는 SCHEMA.md만 보정해 unknown tag를 제거한다.
+    assert dry_run.dry_run is True
+    assert dry_run.unknown_tags == ["agent-harness"]
+    assert page_path.read_text(encoding="utf-8") == before_page
+    assert applied.changed_files == ["SCHEMA.md"]
+    assert "agent-harness" in (vault_root / "SCHEMA.md").read_text(encoding="utf-8")
+    assert schema_service.validate_vault().summary.unknown_tags == 0
