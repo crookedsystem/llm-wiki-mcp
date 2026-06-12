@@ -16,6 +16,9 @@ STOP_HOOK_WARNING = (
 )
 STOP_HOOK_PROMPT = "Install LLM Wiki Stop hook? Type Y or N only: "
 STOP_HOOK_RETRY = "Please type exactly Y or N."
+STOP_HOOK_DRY_RUN_SKIP = (
+    "[dry-run] skip interactive Stop hook prompt; Stop hook is not included in dry-run plan."
+)
 
 
 class StopHookPromptError(RuntimeError):
@@ -43,11 +46,15 @@ def run(argv: list[str] | None = None) -> int:
         )
         if config.install_hooks:
             if stop_hook_choice is None:
-                try:
-                    stop_hook_choice = prompt_stop_hook_install()
-                except StopHookPromptError as exc:
-                    print(str(exc), file=sys.stderr)
-                    return 2
+                if config.dry_run:
+                    print(STOP_HOOK_DRY_RUN_SKIP)
+                    stop_hook_choice = False
+                else:
+                    try:
+                        stop_hook_choice = prompt_stop_hook_install()
+                    except StopHookPromptError as exc:
+                        print(str(exc), file=sys.stderr)
+                        return 2
             config = replace(config, install_stop_hook=stop_hook_choice)
         print(f"== {agent} ==")
         print(f"Using env file: {config.env_file}")
