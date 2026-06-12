@@ -1,3 +1,5 @@
+from datetime import date
+
 from mcp.server.fastmcp import FastMCP
 
 from vault.dto.request.search_notes_request import SearchNotesRequest
@@ -10,6 +12,7 @@ from vault.dto.response.write_note_response import (
     WriteNoteResponse,
     write_note_response,
 )
+from vault.service.command.write_note_command import ConfidenceLevel, WikiNoteType
 from vault.service.vault_search_service import VaultSearchService
 from vault.service.vault_write_service import VaultWriteService
 
@@ -21,17 +24,37 @@ def register_vault_tools(
 ) -> None:
     @server.tool(
         description=(
-            "Write a complete Markdown note inside the configured vault. "
-            "Existing notes require the current content_hash as if_hash so agents do not "
-            "overwrite a newer wiki revision by accident."
+            "Write a Markdown wiki note from structured fields. The tool renders YAML "
+            "frontmatter, title heading, body, and provenance inside the configured vault. "
+            "Existing notes require the current content_hash as if_hash."
         )
     )
     async def kb_write_note(
         note_path: str,
-        content: str,
+        title: str,
+        type: WikiNoteType,
+        tags: list[str],
+        sources: list[str],
+        body: str,
+        created: date,
+        updated: date,
+        confidence: ConfidenceLevel | None = None,
+        contested: bool | None = None,
         if_hash: str | None = None,
     ) -> WriteNoteResponse:
-        request = WriteNoteRequest(note_path=note_path, content=content, if_hash=if_hash)
+        request = WriteNoteRequest(
+            note_path=note_path,
+            title=title,
+            type=type,
+            tags=tags,
+            sources=sources,
+            body=body,
+            created=created,
+            updated=updated,
+            confidence=confidence,
+            contested=contested,
+            if_hash=if_hash,
+        )
         result = await write_service.write_note(request.to_command())
         return write_note_response(result)
 

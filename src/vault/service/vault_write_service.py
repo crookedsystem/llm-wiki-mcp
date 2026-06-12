@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from pydantic import Field
+
 from common.model import FrozenModel
 from vault.component.write_queue import VaultWriteQueue
 from vault.entity.vault_note import (
@@ -11,6 +13,7 @@ from vault.error.write_error import WriteConflictError
 from vault.infrastructure.repository.git_repository import GitRepository
 from vault.service.command.write_note_command import WriteNoteCommand
 from vault.service.result.write_note_result import WriteNoteResult
+from vault.service.vault_note_renderer import VaultNoteRenderer
 
 
 class _FileSnapshot(FrozenModel):
@@ -23,6 +26,7 @@ class VaultWriteService(FrozenModel):
     queue: VaultWriteQueue
     actor: str = "llm-wiki"
     git_repository: GitRepository | None = None
+    note_renderer: VaultNoteRenderer = Field(default_factory=VaultNoteRenderer)
 
     async def write_note(self, command: WriteNoteCommand) -> WriteNoteResult:
         async def operation() -> WriteNoteResult:
@@ -59,9 +63,10 @@ class VaultWriteService(FrozenModel):
         resolved_path = self.paths.resolve_note_path(command.note_path)
         self._check_if_hash(resolved_path, command.if_hash)
 
-        source_hash = compute_sha256(command.content)
+        content = self.note_renderer.render(command)
+        source_hash = compute_sha256(content)
         final_content = append_provenance_trailer(
-            command.content,
+            content,
             source_hash=source_hash,
             operation="write_note",
             actor=self.actor,
