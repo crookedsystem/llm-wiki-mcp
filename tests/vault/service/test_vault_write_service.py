@@ -9,7 +9,7 @@ from vault.component.write_queue import VaultWriteQueue
 from vault.entity.vault_note import compute_sha256
 from vault.entity.vault_path import VaultPaths
 from vault.error.write_error import WriteConflictError
-from vault.service.command.write_note_command import WriteNoteCommand
+from vault.service.command.write_note_command import WikiNoteType, WriteNoteCommand
 from vault.service.vault_write_service import VaultWriteService
 
 
@@ -17,6 +17,7 @@ def _write_command(
     *,
     note_path: str = "concepts/today.md",
     title: str = "Today",
+    note_type: WikiNoteType = "concept",
     tags: tuple[str, ...] = ("agent-memory",),
     sources: tuple[str, ...] = ("raw/articles/source.md",),
     body: str = "## Summary\nBody text",
@@ -25,7 +26,7 @@ def _write_command(
     return WriteNoteCommand(
         note_path=note_path,
         title=title,
-        type="concept",
+        type=note_type,
         tags=tags,
         sources=sources,
         body=body,
@@ -120,3 +121,20 @@ def test_write_command는_tags와_sources의_line_separator를_거부한다() ->
 
     with pytest.raises(ValidationError, match="list values must be single-line"):
         _write_command(sources=("raw/articles/source.md\rcontested: true",))
+
+
+@pytest.mark.parametrize(
+    ("note_path", "note_type"),
+    [
+        ("entities/../concepts/bad.md", "entity"),
+        ("raw/../index.md", "raw"),
+    ],
+)
+def test_write_command는_parent_segment로_path_type_검증을_우회하지_못한다(
+    note_path: str,
+    note_type: WikiNoteType,
+) -> None:
+    # When / Then: writer가 resolve할 위치와 command의 type 검증 대상이
+    # 달라질 수 있는 path는 거부된다.
+    with pytest.raises(ValidationError, match="parent directory segments"):
+        _write_command(note_path=note_path, note_type=note_type)

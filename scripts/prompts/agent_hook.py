@@ -59,5 +59,6 @@ CONTEXT_RESULTS_INTRO: Final = "Relevant existing wiki notes from `kb_search_not
 
 CONTEXT_FOOTER: Final = (
     "Use this as orientation only. For updates, retrieve the full current note body "
-    "when available, then write complete Markdown via `kb_write_note` with `if_hash`."
+    "when available, then resubmit the complete replacement structured fields via "
+    "`kb_write_note` with `if_hash`; do not pass complete Markdown."
 )

@@ -90,7 +90,10 @@ class WriteNoteCommand(FrozenModel):
 
     @model_validator(mode="after")
     def _validate_contract(self) -> "WriteNoteCommand":
-        allowed_types = _allowed_types_for_path(Path(self.note_path))
+        note_path = Path(self.note_path)
+        if _contains_parent_segment(note_path):
+            raise ValueError("note_path must not contain parent directory segments")
+        allowed_types = _allowed_types_for_path(note_path)
         if allowed_types is None:
             raise ValueError(
                 "note_path must be SCHEMA.md, index.md, log.md, or live under "
@@ -110,6 +113,10 @@ def _allowed_types_for_path(note_path: Path) -> frozenset[WikiNoteType] | None:
     if not note_path.parts:
         return None
     return _ROOT_TYPES.get(note_path.parts[0])
+
+
+def _contains_parent_segment(note_path: Path) -> bool:
+    return ".." in note_path.parts
 
 
 def _has_line_separator(value: str) -> bool:
