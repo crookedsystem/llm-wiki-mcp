@@ -104,7 +104,7 @@ mcp_servers:
 
 1. `.env.example`을 `.env`로 복사하고, 실행할 서버 기준으로 `KB_VAULT_PATH`, `KB_HOST`, `KB_PORT`, `KB_MCP_PATH`를 설정합니다.
 2. `uv run llm-wiki`로 MCP 서버를 실행합니다.
-3. Setup entrypoint를 실행합니다. 기본값은 지원하는 모든 agent를 설치하고, 일부만 설치하려면 `--agent`를 넘깁니다. 또한 같은 MCP server를 사용해 user input 시점 context loading과 stop-time wiki update pass를 실행하는 hook scaffold도 함께 설치합니다.
+3. Setup entrypoint를 실행합니다. 기본값은 지원하는 모든 agent를 설치하고, 일부만 설치하려면 `--agent`를 넘깁니다. user input 시점 context hook은 기본 설치하고, stop-time wiki update pass용 Stop hook은 설치 여부를 묻습니다.
 4. MCP tool, skill, native hook/plugin 설정이 다시 로드되도록 agent session을 재시작합니다.
 
 ### Agent integration용 파일
@@ -137,7 +137,7 @@ MCP server name 결정 순서:
 2. `LLM_WIKI_MCP_SERVER_NAME`
 3. Agent 기본값: Hermes/Codex는 `llm_wiki`, Claude Code는 `llm-wiki`
 
-Hook setup은 기본으로 켜져 있습니다. 끄려면 `LLM_WIKI_INSTALL_HOOKS=false`를 설정하거나 `--no-hooks`를 넘깁니다. 생성되는 hook script는 같은 helper를 두 mode로 실행합니다:
+Hook setup은 기본으로 켜져 있습니다. 끄려면 `LLM_WIKI_INSTALL_HOOKS=false`를 설정하거나 `--no-hooks`를 넘깁니다. setup 중에는 Stop hook을 설치하면 LLM 응답을 제대로 받지 못할 수 있다는 경고를 출력하고 설치 여부를 묻습니다. setup은 대문자 `Y` 또는 `N`이 입력될 때까지 진행되지 않습니다. `Y`는 Stop hook을 설치하고, `N`은 context hook만 설치하며, 잘못된 입력은 다시 묻고, 비대화형 stdin/EOF는 설치 시작 전에 중단합니다. 두 hook을 모두 설치한 경우 생성되는 hook script는 같은 helper를 두 mode로 실행합니다:
 
 - user input: `kb_search_notes`를 query하고 model에 줄 compact `<llm-wiki-context>` block 출력
 - stop/completion: model에게 마지막 MCP update pass를 요청해 durable fact/decision/procedure만 쓰고 content 변경 시 `index.md`/`log.md` 업데이트
@@ -163,7 +163,7 @@ uv run python scripts/main.py --agent hermes
 수행 내용:
 
 - `skills/llm-wiki/`를 `${HERMES_HOME:-~/.hermes}/skills/llm-wiki/`로 복사
-- 재사용 가능한 hook command를 `${HERMES_LLM_WIKI_HOOKS_DIR:-${HERMES_HOME:-~/.hermes}/hooks/llm-wiki}/` 아래에 설치
+- 재사용 가능한 context hook command를 `${HERMES_LLM_WIKI_HOOKS_DIR:-${HERMES_HOME:-~/.hermes}/hooks/llm-wiki}/` 아래에 설치하고, Stop hook은 `Y/N` 프롬프트에 `Y`로 답한 경우에만 설치
 - `${LLM_WIKI_MCP_SERVER_NAME:-llm_wiki}`가 없을 때만 Hermes MCP config에 추가
 - CLI를 사용할 수 있으면 `hermes mcp test <server-name>` 실행
 
@@ -178,12 +178,12 @@ uv run python scripts/main.py --agent claude
 수행 내용:
 
 - `skills/llm-wiki/`를 `${CLAUDE_SKILLS_DIR:-~/.claude/skills}/llm-wiki/`로 복사
-- `llm-wiki-context-hook.sh`, `llm-wiki-stop-hook.sh`를 `${CLAUDE_HOOKS_DIR:-~/.claude/hooks/llm-wiki}/` 아래에 설치
-- Claude Code `UserPromptSubmit`, `Stop` hook entry를 `${CLAUDE_SETTINGS_PATH:-~/.claude/settings.json}`에 중복 없이 병합
+- `llm-wiki-context-hook.sh`를 `${CLAUDE_HOOKS_DIR:-~/.claude/hooks/llm-wiki}/` 아래에 설치하고, `llm-wiki-stop-hook.sh`는 `Y/N` 프롬프트에 `Y`로 답한 경우에만 설치
+- Claude Code `UserPromptSubmit` 및 선택한 경우 `Stop` hook entry를 `${CLAUDE_SETTINGS_PATH:-~/.claude/settings.json}`에 중복 없이 병합
 - `${LLM_WIKI_MCP_SERVER_NAME:-llm-wiki}`가 없을 때만 `claude mcp add -s ${CLAUDE_MCP_SCOPE:-user} --transport http ...`로 추가
 - CLI를 사용할 수 있으면 `claude mcp get <server-name>` 실행
 
-Claude `UserPromptSubmit` hook은 model 시작 전에 wiki context를 출력합니다. `Stop` hook은 Claude가 종료하기 전에 MCP로 LLM Wiki를 업데이트하도록 한 번 block decision을 반환하며, follow-up stop event의 `stop_hook_active=true`에서는 다시 block하지 않아 무한 loop를 방지합니다.
+Claude `UserPromptSubmit` hook은 model 시작 전에 wiki context를 출력합니다. setup에서 선택한 경우 `Stop` hook은 Claude가 종료하기 전에 MCP로 LLM Wiki를 업데이트하도록 한 번 block decision을 반환하며, follow-up stop event의 `stop_hook_active=true`에서는 다시 block하지 않아 무한 loop를 방지합니다.
 
 Project-scoped `.mcp.json` server를 처음 열면 Claude가 승인 여부를 물을 수 있습니다.
 
@@ -196,11 +196,11 @@ uv run python scripts/main.py --agent codex
 수행 내용:
 
 - `skills/llm-wiki/`를 `${CODEX_SKILLS_DIR:-${CODEX_HOME:-~/.codex}/skills}/llm-wiki/`로 복사
-- `llm-wiki-context-hook.sh`와 `llm-wiki-stop-hook.sh`를 `${CODEX_LLM_WIKI_HOOKS_DIR:-${CODEX_HOME:-~/.codex}/hooks/llm-wiki}/` 아래에 설치
-- Codex `UserPromptSubmit`/`Stop` hook 엔트리를 중복 없이 `${CODEX_HOOKS_JSON_PATH:-~/.codex/hooks.json}`에 병합
+- `llm-wiki-context-hook.sh`를 `${CODEX_LLM_WIKI_HOOKS_DIR:-${CODEX_HOME:-~/.codex}/hooks/llm-wiki}/` 아래에 설치하고, `llm-wiki-stop-hook.sh`는 `Y/N` 프롬프트에 `Y`로 답한 경우에만 설치
+- Codex `UserPromptSubmit` 및 선택한 경우 `Stop` hook 엔트리를 중복 없이 `${CODEX_HOOKS_JSON_PATH:-~/.codex/hooks.json}`에 병합
 - 같은 name 또는 URL이 없을 때만 `${CODEX_CONFIG_PATH:-~/.codex/config.toml}`에 새 `[mcp_servers.<name>]` block 추가
 
-Codex(2026+)는 Claude Code와 동일한 hook JSON schema를 공유하므로, `Stop` hook도 종료 전에 LLM Wiki를 업데이트하라는 일회성 `decision=block`을 emit합니다. `stop_hook_active=true`가 되면 helper가 재차단을 건너뛰어 loop가 발생하지 않습니다. `config.toml`, `hooks.json`, 또는 skill file을 변경한 뒤에는 Codex를 재시작하세요.
+Codex(2026+)는 Claude Code와 동일한 hook JSON schema를 공유하므로, setup에서 선택한 경우 `Stop` hook도 종료 전에 LLM Wiki를 업데이트하라는 일회성 `decision=block`을 emit합니다. `stop_hook_active=true`가 되면 helper가 재차단을 건너뛰어 loop가 발생하지 않습니다. `config.toml`, `hooks.json`, 또는 skill file을 변경한 뒤에는 Codex를 재시작하세요.
 
 ### Setup entrypoint option
 
@@ -225,7 +225,7 @@ Setup entrypoint는 다음 option을 지원합니다:
 --env-file PATH           # 기본값: repository .env
 --server-url URL          # .env 기반 MCP URL 결정을 override
 --server-name NAME        # 기본값: Hermes/Codex는 llm_wiki, Claude는 llm-wiki
---no-hooks                # input/stop hook scaffold 설치 skip
+--no-hooks                # 모든 hook scaffold 설치 skip
 --claude-settings PATH    # hook을 병합할 Claude settings JSON
 ```
 
@@ -242,7 +242,7 @@ Skill은 agent에게 다음을 지시합니다:
 - `kb_write_note`를 통해 완전한 Markdown note 작성
 - optimistic concurrency를 위해 반환된 `content_hash`를 다음 `if_hash`로 사용
 - raw source는 immutable하게 유지하고 durable wiki 변경 시 `index.md`와 `log.md` 업데이트
-- 설치된 hook command를 native hook, plugin, wrapper와 함께 사용: 사용자 input 시점에는 compact wiki context를 로드하고, agent 종료 시점에는 stop-time update pass 실행. Claude Code와 Codex는 동일한 `UserPromptSubmit`/`Stop` hook schema(in-loop `decision=block` 재프롬프트)를 공유하므로 setup이 자동으로 연결합니다. Hermes/Hermess는 finalize 계열 session hook만 제공하므로, plugin/wrapper나 finalize hook에 연결해 out-of-loop update pass를 돌리도록 재사용 script를 설치합니다.
+- 설치된 hook command를 native hook, plugin, wrapper와 함께 사용: 사용자 input 시점에는 compact wiki context를 로드하고, setup에서 선택한 경우 agent 종료 시점에는 stop-time update pass를 실행합니다. Claude Code와 Codex는 동일한 `UserPromptSubmit`/`Stop` hook schema(in-loop `decision=block` 재프롬프트)를 공유하므로 setup으로 연결할 수 있습니다. Hermes/Hermess는 finalize 계열 session hook만 제공하므로, plugin/wrapper나 finalize hook에 연결해 out-of-loop update pass를 돌리도록 재사용 script를 설치합니다.
 
 현재 서버가 노출하는 MCP tool은 `kb_write_note`, `kb_search_notes`입니다. Vault/graph counter는 REST `GET /metrics` endpoint로 제공합니다.
 

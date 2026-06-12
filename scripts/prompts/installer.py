@@ -46,14 +46,12 @@ Installed by `uv run python scripts/main.py --agent {agent}` from:
 ## Commands
 
 - User input context loader: `{context_hook}`
-- Stop/update enforcer: `{stop_hook}`
+{stop_hook_section}
 
 The context hook queries `{server_name}` at `{server_url}` with `kb_search_notes`
 and prints a compact orientation block.
 
-The stop hook asks the agent to run a final LLM Wiki update pass through MCP before it finishes.
-It should write only durable facts/decisions/procedures, update `index.md`/`log.md` when
-content changes, and use `content_hash` as `if_hash` for safe updates.
+{stop_hook_description}
 
 Claude Code user-level setup is merged into `{claude_settings_path}` when `--agent claude`
 is used. Codex shares Claude Code's hook JSON schema (UserPromptSubmit/Stop, decision=block),

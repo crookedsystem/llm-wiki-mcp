@@ -17,7 +17,7 @@ STOP_HOOK_NAME = "llm-wiki-stop-hook.sh"
 @dataclass(frozen=True)
 class HookInstallResult:
     context_hook: Path
-    stop_hook: Path
+    stop_hook: Path | None
     settings_path: Path | None = None
     settings_changed: bool = False
 
@@ -29,25 +29,30 @@ def install_agent_hooks(config: ResolvedConfig) -> HookInstallResult | None:
 
     hooks_dir = hooks_dir_for_agent(config)
     context_hook = hooks_dir / CONTEXT_HOOK_NAME
-    stop_hook = hooks_dir / STOP_HOOK_NAME
+    stop_hook_path = hooks_dir / STOP_HOOK_NAME
+    stop_hook = stop_hook_path if config.install_stop_hook else None
     if config.dry_run:
-        print(f"[dry-run] install LLM Wiki hooks into {hooks_dir}")
+        suffix = "hooks" if config.install_stop_hook else "context hook"
+        print(f"[dry-run] install LLM Wiki {suffix} into {hooks_dir}")
     else:
         hooks_dir.mkdir(parents=True, exist_ok=True)
         context_hook.write_text(render_hook_script(config, mode="context"), encoding="utf-8")
-        stop_hook.write_text(
-            render_hook_script(
-                config,
-                mode="stop",
-                # Claude Code and Codex share the same Stop-hook schema, so both consume the
-                # decision=block JSON. Hermes only exposes finalize-style session hooks (no
-                # re-prompt), so it gets the plain-text reason instead.
-                extra_args=["--block-json"] if config.agent in {"claude", "codex"} else [],
-            ),
-            encoding="utf-8",
-        )
         context_hook.chmod(0o755)
-        stop_hook.chmod(0o755)
+        if stop_hook is not None:
+            stop_hook.write_text(
+                render_hook_script(
+                    config,
+                    mode="stop",
+                    # Claude Code and Codex share the same Stop-hook schema, so both consume the
+                    # decision=block JSON. Hermes only exposes finalize-style session hooks (no
+                    # re-prompt), so it gets the plain-text reason instead.
+                    extra_args=["--block-json"] if config.agent in {"claude", "codex"} else [],
+                ),
+                encoding="utf-8",
+            )
+            stop_hook.chmod(0o755)
+        else:
+            stop_hook_path.unlink(missing_ok=True)
         write_hooks_readme(config, hooks_dir, context_hook, stop_hook)
 
     settings_changed = False
@@ -57,7 +62,8 @@ def install_agent_hooks(config: ResolvedConfig) -> HookInstallResult | None:
         settings_changed = merge_claude_hook_settings(
             settings_path=settings_path,
             context_command=str(context_hook),
-            stop_command=str(stop_hook),
+            stop_command=str(stop_hook) if stop_hook is not None else None,
+            disabled_stop_command=str(stop_hook_path) if stop_hook is None else None,
             dry_run=config.dry_run,
         )
     elif config.agent == "codex":
@@ -65,16 +71,20 @@ def install_agent_hooks(config: ResolvedConfig) -> HookInstallResult | None:
         settings_changed = merge_codex_hook_settings(
             settings_path=settings_path,
             context_command=str(context_hook),
-            stop_command=str(stop_hook),
+            stop_command=str(stop_hook) if stop_hook is not None else None,
+            disabled_stop_command=str(stop_hook_path) if stop_hook is None else None,
             dry_run=config.dry_run,
         )
     elif config.agent == "hermes":
-        print(
-            "Installed reusable LLM Wiki hook commands for hermes. Hermes exposes only "
-            "finalize-style session hooks (on_session_end/on_session_finalize/subagent_stop) "
-            "without Claude-style Stop re-prompting, so wire these scripts into a Hermes "
-            "plugin/wrapper or finalize hook for an out-of-loop update pass."
-        )
+        if stop_hook is None:
+            print("Installed reusable LLM Wiki context hook command for hermes; Stop hook skipped.")
+        else:
+            print(
+                "Installed reusable LLM Wiki hook commands for hermes. Hermes exposes only "
+                "finalize-style session hooks (on_session_end/on_session_finalize/subagent_stop) "
+                "without Claude-style Stop re-prompting, so wire these scripts into a Hermes "
+                "plugin/wrapper or finalize hook for an out-of-loop update pass."
+            )
 
     return HookInstallResult(
         context_hook=context_hook,
@@ -121,15 +131,29 @@ def write_hooks_readme(
     config: ResolvedConfig,
     hooks_dir: Path,
     context_hook: Path,
-    stop_hook: Path,
+    stop_hook: Path | None,
 ) -> None:
     readme = hooks_dir / "README.md"
+    stop_hook_section = (
+        f"- Stop/update enforcer: `{stop_hook}`"
+        if stop_hook is not None
+        else "- Stop/update enforcer: not installed"
+    )
+    stop_hook_description = (
+        "The stop hook asks the agent to run a final LLM Wiki update pass through MCP before it "
+        "finishes. It should write only durable facts/decisions/procedures, update "
+        "`index.md`/`log.md` when content changes, and use `content_hash` as `if_hash` for safe "
+        "updates."
+        if stop_hook is not None
+        else "The stop hook was not installed for this setup run."
+    )
     readme.write_text(
         HOOKS_README_TEMPLATE.format(
             agent=config.agent,
             repo_root=config.repo_root,
             context_hook=context_hook,
-            stop_hook=stop_hook,
+            stop_hook_section=stop_hook_section,
+            stop_hook_description=stop_hook_description,
             server_name=config.server_name,
             server_url=config.server_url,
             claude_settings_path=config.claude_settings_path,
@@ -142,14 +166,16 @@ def merge_claude_hook_settings(
     *,
     settings_path: Path,
     context_command: str,
-    stop_command: str,
+    stop_command: str | None,
     dry_run: bool,
+    disabled_stop_command: str | None = None,
 ) -> bool:
     """Merge UserPromptSubmit/Stop hooks into Claude Code's `settings.json`."""
     return merge_hook_settings_json(
         settings_path=settings_path,
         context_command=context_command,
         stop_command=stop_command,
+        disabled_stop_command=disabled_stop_command,
         dry_run=dry_run,
         label="Claude",
     )
@@ -159,8 +185,9 @@ def merge_codex_hook_settings(
     *,
     settings_path: Path,
     context_command: str,
-    stop_command: str,
+    stop_command: str | None,
     dry_run: bool,
+    disabled_stop_command: str | None = None,
 ) -> bool:
     """Merge UserPromptSubmit/Stop hooks into Codex's `hooks.json`.
 
@@ -172,6 +199,7 @@ def merge_codex_hook_settings(
         settings_path=settings_path,
         context_command=context_command,
         stop_command=stop_command,
+        disabled_stop_command=disabled_stop_command,
         dry_run=dry_run,
         label="Codex",
     )
@@ -181,9 +209,10 @@ def merge_hook_settings_json(
     *,
     settings_path: Path,
     context_command: str,
-    stop_command: str,
+    stop_command: str | None,
     dry_run: bool,
     label: str,
+    disabled_stop_command: str | None = None,
 ) -> bool:
     settings = load_json_object(settings_path, label=label)
     hooks = settings.setdefault("hooks", {})
@@ -198,12 +227,19 @@ def merge_hook_settings_json(
         command=context_command,
         timeout=5,
     )
-    changed |= ensure_hook_command(
-        hooks,
-        event="Stop",
-        command=stop_command,
-        timeout=10,
-    )
+    if stop_command is not None:
+        changed |= ensure_hook_command(
+            hooks,
+            event="Stop",
+            command=stop_command,
+            timeout=10,
+        )
+    elif disabled_stop_command is not None:
+        changed |= remove_hook_command(
+            hooks,
+            event="Stop",
+            command=disabled_stop_command,
+        )
 
     if changed:
         if dry_run:
@@ -258,6 +294,52 @@ def ensure_hook_command(
             ]
         }
     )
+    return True
+
+
+def remove_hook_command(
+    hooks: dict[str, Any],
+    *,
+    event: str,
+    command: str,
+) -> bool:
+    event_entries = hooks.get(event)
+    if not isinstance(event_entries, list):
+        return False
+
+    changed = False
+    kept_entries: list[Any] = []
+    for entry in event_entries:
+        if not isinstance(entry, dict):
+            kept_entries.append(entry)
+            continue
+
+        hook_items = entry.get("hooks")
+        if not isinstance(hook_items, list):
+            kept_entries.append(entry)
+            continue
+
+        kept_hooks = [
+            hook
+            for hook in hook_items
+            if not (isinstance(hook, dict) and hook.get("command") == command)
+        ]
+        if len(kept_hooks) == len(hook_items):
+            kept_entries.append(entry)
+            continue
+
+        changed = True
+        if kept_hooks:
+            updated_entry = dict(entry)
+            updated_entry["hooks"] = kept_hooks
+            kept_entries.append(updated_entry)
+
+    if not changed:
+        return False
+    if kept_entries:
+        hooks[event] = kept_entries
+    else:
+        hooks.pop(event, None)
     return True
 
 

@@ -104,7 +104,7 @@ The expected flow is:
 
 1. Copy `.env.example` to `.env` and set `KB_VAULT_PATH`, `KB_HOST`, `KB_PORT`, and `KB_MCP_PATH` for the server you will run.
 2. Run the MCP server with `uv run llm-wiki`.
-3. Run the setup entrypoint. By default it installs every supported agent; pass `--agent` to install a subset. It also installs LLM Wiki input/stop hook scaffolds so prompt-time context loading and stop-time wiki update passes use the same MCP server.
+3. Run the setup entrypoint. By default it installs every supported agent; pass `--agent` to install a subset. It installs the prompt-time context hook by default and asks whether to install the Stop hook for stop-time wiki update passes.
 4. Restart the agent session so MCP tools, skills, and any native hook/plugin configuration are reloaded.
 
 ### Files for agent integrations
@@ -137,7 +137,7 @@ MCP server name resolution order:
 2. `LLM_WIKI_MCP_SERVER_NAME`
 3. Agent default: `llm_wiki` for Hermes/Codex, `llm-wiki` for Claude Code
 
-Hook setup is enabled by default. Set `LLM_WIKI_INSTALL_HOOKS=false` or pass `--no-hooks` to skip it. The generated hook scripts run the same helper in two modes:
+Hook setup is enabled by default. Set `LLM_WIKI_INSTALL_HOOKS=false` or pass `--no-hooks` to skip it. During setup, the installer warns that the Stop hook may prevent the LLM response from being delivered correctly and asks whether to install it. Setup does not continue until uppercase `Y` or `N` is entered: `Y` installs the Stop hook, `N` continues with only the context hook, invalid input repeats the prompt, and non-interactive stdin/EOF aborts before installation. When both hooks are installed, the generated scripts run the same helper in two modes:
 
 - user input: query `kb_search_notes` and print a compact `<llm-wiki-context>` block for the model;
 - stop/completion: ask the model to do one final MCP update pass, writing only durable facts/decisions/procedures and updating `index.md`/`log.md` when content changes.
@@ -163,7 +163,7 @@ uv run python scripts/main.py --agent hermes
 What it does:
 
 - Copies `skills/llm-wiki/` to `${HERMES_HOME:-~/.hermes}/skills/llm-wiki/`
-- Installs reusable hook commands under `${HERMES_LLM_WIKI_HOOKS_DIR:-${HERMES_HOME:-~/.hermes}/hooks/llm-wiki}/`
+- Installs the reusable context hook command under `${HERMES_LLM_WIKI_HOOKS_DIR:-${HERMES_HOME:-~/.hermes}/hooks/llm-wiki}/`; installs the reusable Stop hook only after the `Y/N` prompt is answered with `Y`
 - Adds `${LLM_WIKI_MCP_SERVER_NAME:-llm_wiki}` to Hermes MCP config only when missing
 - Runs `hermes mcp test <server-name>` when the CLI is available
 
@@ -178,12 +178,12 @@ uv run python scripts/main.py --agent claude
 What it does:
 
 - Copies `skills/llm-wiki/` to `${CLAUDE_SKILLS_DIR:-~/.claude/skills}/llm-wiki/`
-- Installs `llm-wiki-context-hook.sh` and `llm-wiki-stop-hook.sh` under `${CLAUDE_HOOKS_DIR:-~/.claude/hooks/llm-wiki}/`
-- Merges Claude Code `UserPromptSubmit` and `Stop` hook entries into `${CLAUDE_SETTINGS_PATH:-~/.claude/settings.json}` without duplicating existing entries
+- Installs `llm-wiki-context-hook.sh` under `${CLAUDE_HOOKS_DIR:-~/.claude/hooks/llm-wiki}/`; installs `llm-wiki-stop-hook.sh` only after the `Y/N` prompt is answered with `Y`
+- Merges Claude Code `UserPromptSubmit` and, when selected, `Stop` hook entries into `${CLAUDE_SETTINGS_PATH:-~/.claude/settings.json}` without duplicating existing entries
 - Adds `${LLM_WIKI_MCP_SERVER_NAME:-llm-wiki}` with `claude mcp add -s ${CLAUDE_MCP_SCOPE:-user} --transport http ...` only when missing
 - Runs `claude mcp get <server-name>` when the CLI is available
 
-The Claude `UserPromptSubmit` hook prints wiki context before the model starts. The `Stop` hook emits a one-time block decision asking Claude to update LLM Wiki through MCP before it finishes; Claude sets `stop_hook_active=true` on the follow-up stop event, so the hook does not loop forever.
+The Claude `UserPromptSubmit` hook prints wiki context before the model starts. If selected during setup, the `Stop` hook emits a one-time block decision asking Claude to update LLM Wiki through MCP before it finishes; Claude sets `stop_hook_active=true` on the follow-up stop event, so the hook does not loop forever.
 
 Claude may ask you to approve project-scoped `.mcp.json` servers the first time you open a project.
 
@@ -196,11 +196,11 @@ uv run python scripts/main.py --agent codex
 What it does:
 
 - Copies `skills/llm-wiki/` to `${CODEX_SKILLS_DIR:-${CODEX_HOME:-~/.codex}/skills}/llm-wiki/`
-- Installs `llm-wiki-context-hook.sh` and `llm-wiki-stop-hook.sh` under `${CODEX_LLM_WIKI_HOOKS_DIR:-${CODEX_HOME:-~/.codex}/hooks/llm-wiki}/`
-- Merges Codex `UserPromptSubmit` and `Stop` hook entries into `${CODEX_HOOKS_JSON_PATH:-~/.codex/hooks.json}` without duplicating existing entries
+- Installs `llm-wiki-context-hook.sh` under `${CODEX_LLM_WIKI_HOOKS_DIR:-${CODEX_HOME:-~/.codex}/hooks/llm-wiki}/`; installs `llm-wiki-stop-hook.sh` only after the `Y/N` prompt is answered with `Y`
+- Merges Codex `UserPromptSubmit` and, when selected, `Stop` hook entries into `${CODEX_HOOKS_JSON_PATH:-~/.codex/hooks.json}` without duplicating existing entries
 - Appends a new `[mcp_servers.<name>]` block to `${CODEX_CONFIG_PATH:-~/.codex/config.toml}` only when the same name or URL is absent
 
-Codex (2026+) shares Claude Code's hook JSON schema, so its `Stop` hook also emits a one-time `decision=block` asking the agent to update LLM Wiki before it finishes; the helper skips re-blocking once `stop_hook_active=true`, so the hook does not loop. Restart Codex after changing `config.toml`, `hooks.json`, or skill files.
+Codex (2026+) shares Claude Code's hook JSON schema, so if selected during setup its `Stop` hook also emits a one-time `decision=block` asking the agent to update LLM Wiki before it finishes; the helper skips re-blocking once `stop_hook_active=true`, so the hook does not loop. Restart Codex after changing `config.toml`, `hooks.json`, or skill files.
 
 ### Setup entrypoint options
 
@@ -225,7 +225,7 @@ The setup entrypoint supports:
 --env-file PATH           # default: repository .env
 --server-url URL          # override .env MCP URL resolution
 --server-name NAME        # default: llm_wiki for Hermes/Codex, llm-wiki for Claude
---no-hooks                # skip input/stop hook scaffold installation
+--no-hooks                # skip all hook scaffold installation
 --claude-settings PATH    # Claude settings JSON to merge hooks into
 ```
 
@@ -242,7 +242,7 @@ The skill tells agents to:
 - Write complete Markdown notes through `kb_write_note`.
 - Use returned `content_hash` as the next `if_hash` for optimistic concurrency.
 - Keep raw sources immutable and update `index.md` plus `log.md` for durable wiki changes.
-- Use the installed hook commands with native hooks, plugins, or wrappers: load compact wiki context at user-input time and run a stop-time update pass after the agent finishes. Claude Code and Codex are wired automatically by setup because they share the same `UserPromptSubmit`/`Stop` hook schema (in-loop `decision=block` re-prompt). Hermes/Hermess exposes only finalize-style session hooks, so it gets reusable scripts to wire into a plugin/wrapper or finalize hook for an out-of-loop update pass.
+- Use the installed hook commands with native hooks, plugins, or wrappers: load compact wiki context at user-input time and, when selected during setup, run a stop-time update pass after the agent finishes. Claude Code and Codex can be wired by setup because they share the same `UserPromptSubmit`/`Stop` hook schema (in-loop `decision=block` re-prompt). Hermes/Hermess exposes only finalize-style session hooks, so it gets reusable scripts to wire into a plugin/wrapper or finalize hook for an out-of-loop update pass.
 
 Current MCP tools exposed by the server are `kb_write_note` and `kb_search_notes`. Vault/graph counters are exposed through the REST `GET /metrics` endpoint.
 

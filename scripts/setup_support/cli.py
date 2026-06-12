@@ -2,12 +2,24 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 from pathlib import Path
+from typing import TextIO
 
 from setup_support.config import DEFAULT_SERVER_NAMES, repo_root_from_script, resolve_config
 from setup_support.installers import install_agent
 
 AGENTS = tuple(DEFAULT_SERVER_NAMES)
+STOP_HOOK_WARNING = (
+    "Warning: installing the LLM Wiki Stop hook may prevent you from receiving "
+    "the LLM response correctly."
+)
+STOP_HOOK_PROMPT = "Install LLM Wiki Stop hook? Type Y or N only: "
+STOP_HOOK_RETRY = "Please type exactly Y or N."
+
+
+class StopHookPromptError(RuntimeError):
+    """Raised when setup cannot collect the required Stop-hook Y/N choice."""
 
 
 def run(argv: list[str] | None = None) -> int:
@@ -15,6 +27,7 @@ def run(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     repo_root = repo_root_from_script(__file__)
     status = 0
+    stop_hook_choice: bool | None = None
     for agent in selected_agents(args.agent):
         config = resolve_config(
             agent=agent,
@@ -28,6 +41,14 @@ def run(argv: list[str] | None = None) -> int:
             install_hooks=args.install_hooks,
             claude_settings_path=args.claude_settings,
         )
+        if config.install_hooks:
+            if stop_hook_choice is None:
+                try:
+                    stop_hook_choice = prompt_stop_hook_install()
+                except StopHookPromptError as exc:
+                    print(str(exc), file=sys.stderr)
+                    return 2
+            config = replace(config, install_stop_hook=stop_hook_choice)
         print(f"== {agent} ==")
         print(f"Using env file: {config.env_file}")
         print(f"Resolved MCP server: {config.server_name} -> {config.server_url}")
@@ -69,7 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
         dest="install_hooks",
         action="store_false",
         default=None,
-        help="skip installing LLM Wiki input/stop hook scaffolds",
+        help="skip installing all LLM Wiki hook scaffolds",
     )
     parser.add_argument(
         "--claude-settings",
@@ -79,6 +100,34 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     return parser
+
+
+def prompt_stop_hook_install(
+    *,
+    input_stream: TextIO | None = None,
+    output_stream: TextIO | None = None,
+) -> bool:
+    input_stream = sys.stdin if input_stream is None else input_stream
+    output_stream = sys.stdout if output_stream is None else output_stream
+    if not input_stream.isatty():
+        raise StopHookPromptError(
+            "Stop hook install requires interactive Y/N input; installation did not run."
+        )
+
+    print(STOP_HOOK_WARNING, file=output_stream)
+    while True:
+        print(STOP_HOOK_PROMPT, end="", file=output_stream, flush=True)
+        raw_choice = input_stream.readline()
+        if raw_choice == "":
+            raise StopHookPromptError(
+                "Stop hook install prompt ended before Y/N input; installation did not run."
+            )
+        choice = raw_choice.strip()
+        if choice == "Y":
+            return True
+        if choice == "N":
+            return False
+        print(STOP_HOOK_RETRY, file=output_stream)
 
 
 def selected_agents(requested_agents: list[str] | None) -> list[str]:
