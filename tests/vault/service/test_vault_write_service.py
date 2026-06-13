@@ -31,8 +31,8 @@ def _write_command(
         tags=tags,
         sources=sources,
         body=body,
-        created=datetime(2026, 6, 12, 9, 30, 45),
-        updated=datetime(2026, 6, 12, 10, 31, 46),
+        created=datetime(2026, 6, 12, 9, 30, 45, tzinfo=UTC),
+        updated=datetime(2026, 6, 12, 10, 31, 46, tzinfo=UTC),
         confidence="medium",
         contested=False,
         if_hash=if_hash,
@@ -100,8 +100,8 @@ def test_write_command는_path와_type_불일치와_full_markdown_body를_거부
             tags=("agent-memory",),
             sources=("raw/articles/source.md",),
             body="## Summary\nBody",
-            created=datetime(2026, 6, 12, 9, 30, 45),
-            updated=datetime(2026, 6, 12, 10, 31, 46),
+            created=datetime(2026, 6, 12, 9, 30, 45, tzinfo=UTC),
+            updated=datetime(2026, 6, 12, 10, 31, 46, tzinfo=UTC),
         )
 
     with pytest.raises(ValidationError, match="YAML frontmatter"):
@@ -111,25 +111,45 @@ def test_write_command는_path와_type_불일치와_full_markdown_body를_거부
 @pytest.mark.parametrize(
     ("created", "updated", "error"),
     [
-        (date(2026, 6, 12), datetime(2026, 6, 12, 10, 31, 46), "include time"),
+        (date(2026, 6, 12), datetime(2026, 6, 12, 10, 31, 46, tzinfo=UTC), "include time"),
         (
             "2026-06-12T09:30",
-            "2026-06-12T10:31:46",
-            "ISO datetime format with seconds",
+            "2026-06-12T10:31:46Z",
+            "YYYY-MM-DDTHH:MM:SSZ",
         ),
         (
-            datetime(2026, 6, 12, 9, 30, 45, 123),
-            datetime(2026, 6, 12, 10, 31, 46),
+            "2026-06-12T09:30:45",
+            "2026-06-12T10:31:46Z",
+            "YYYY-MM-DDTHH:MM:SSZ",
+        ),
+        (
+            "2026-06-12T18:30:45+09:00",
+            "2026-06-12T10:31:46Z",
+            "YYYY-MM-DDTHH:MM:SSZ",
+        ),
+        (
+            datetime(2026, 6, 12, 9, 30, 45),
+            datetime(2026, 6, 12, 10, 31, 46, tzinfo=UTC),
+            "UTC timezone",
+        ),
+        (
+            datetime(2026, 6, 12, 18, 30, 45, tzinfo=timezone(timedelta(hours=9))),
+            datetime(2026, 6, 12, 10, 31, 46, tzinfo=UTC),
+            "UTC timezone",
+        ),
+        (
+            datetime(2026, 6, 12, 9, 30, 45, 123, tzinfo=UTC),
+            datetime(2026, 6, 12, 10, 31, 46, tzinfo=UTC),
             "sub-second precision",
         ),
     ],
 )
-def test_write_command는_created_updated의_초단위_datetime을_요구한다(
+def test_write_command는_created_updated의_초단위_UTC_Z_datetime을_요구한다(
     created: Any,
     updated: Any,
     error: str,
 ) -> None:
-    # When / Then: date-only, minute precision, sub-second precision timestamp는 거부된다.
+    # When / Then: date-only, Z 없는 값, offset, sub-second timestamp는 거부된다.
     with pytest.raises(ValidationError, match=error):
         WriteNoteCommand(
             note_path="concepts/today.md",
@@ -146,23 +166,18 @@ def test_write_command는_created_updated의_초단위_datetime을_요구한다(
 @pytest.mark.parametrize(
     ("created", "updated"),
     [
-        # naive 입력은 UTC로 간주된다.
-        ("2026-06-12T09:30:45", "2026-06-12T10:31:46"),
-        (datetime(2026, 6, 12, 9, 30, 45), datetime(2026, 6, 12, 10, 31, 46)),
-        # Z/offset 입력은 UTC로 변환된다 (offset 적용 후에도 updated >= created).
         ("2026-06-12T09:30:45Z", "2026-06-12T10:31:46Z"),
-        ("2026-06-12T18:30:45+09:00", "2026-06-12T10:31:46Z"),
         (
-            datetime(2026, 6, 12, 18, 30, 45, tzinfo=timezone(timedelta(hours=9))),
+            datetime(2026, 6, 12, 9, 30, 45, tzinfo=UTC),
             datetime(2026, 6, 12, 10, 31, 46, tzinfo=UTC),
         ),
     ],
 )
-def test_write_command는_created_updated를_UTC로_정규화한다(
+def test_write_command는_created_updated를_UTC_Z_datetime으로_정규화한다(
     created: Any,
     updated: Any,
 ) -> None:
-    # When: naive·Z·offset 입력으로 command를 만든다.
+    # When: UTC Z 문자열 또는 UTC-aware datetime으로 command를 만든다.
     command = WriteNoteCommand(
         note_path="concepts/today.md",
         title="Today",

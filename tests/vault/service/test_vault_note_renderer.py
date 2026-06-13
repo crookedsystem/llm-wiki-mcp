@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from vault.service.command.write_note_command import WriteNoteCommand
 from vault.service.vault_note_renderer import VaultNoteRenderer
@@ -19,8 +19,8 @@ def _write_command(
         tags=tags,
         sources=sources,
         body=body,
-        created=datetime(2026, 6, 12, 9, 30, 45),
-        updated=datetime(2026, 6, 12, 10, 31, 46),
+        created=datetime(2026, 6, 12, 9, 30, 45, tzinfo=UTC),
+        updated=datetime(2026, 6, 12, 10, 31, 46, tzinfo=UTC),
         confidence="medium",
         contested=contested,
     )

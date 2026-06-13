@@ -61,8 +61,8 @@ def test_mcp_server는_write와_search_tool만_노출하고_description을_제�
                 "tags": ["agent-memory"],
                 "sources": ["raw/articles/source.md"],
                 "body": "## Summary\nAgent memory keeps durable context.",
-                "created": "2026-06-12T09:30:45",
-                "updated": "2026-06-12T10:31:46",
+                "created": "2026-06-12T09:30:45Z",
+                "updated": "2026-06-12T10:31:46Z",
                 "confidence": "medium",
                 "contested": False,
             },
@@ -105,7 +105,7 @@ def test_mcp_server는_write_timestamp의_초단위_datetime을_검증한다(tmp
                     "sources": ["raw/articles/source.md"],
                     "body": "## Summary\nAgent memory keeps durable context.",
                     "created": "2026-06-12",
-                    "updated": "2026-06-12T10:31:46",
+                    "updated": "2026-06-12T10:31:46Z",
                 },
             )
 
