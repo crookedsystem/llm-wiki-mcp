@@ -3,7 +3,7 @@ from mcp.server.fastmcp import FastMCP
 from vault.dto.request.context_request import ContextRequest
 from vault.dto.request.search_notes_request import SearchNotesRequest
 from vault.dto.request.write_note_request import WriteNoteRequest
-from vault.dto.response.context_response import ContextResponse, context_response
+from vault.dto.response.context_response import ContextResponse, ContextResponseMapper
 from vault.dto.response.git_push_response import GitPushResponse, git_push_response
 from vault.dto.response.search_notes_response import (
     SearchNotesResponse,
@@ -103,7 +103,7 @@ def register_vault_tools(
             path_prefix=path_prefix,
         )
         result = context_service.context(request.to_command())
-        return context_response(result)
+        return ContextResponseMapper.to_response(result)
 
     @server.tool(
         description=(
