@@ -110,9 +110,7 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
         }
         assert "structured fields" in (tool_by_name["kb_write_note"].description or "")
         assert "Search Markdown notes" in (tool_by_name["kb_search_notes"].description or "")
-        assert "Assemble sectioned wiki context" in (
-            tool_by_name["kb_context"].description or ""
-        )
+        assert "Assemble sectioned wiki context" in (tool_by_name["kb_context"].description or "")
         assert "push origin to the current branch" in (
             tool_by_name["kb_push_vault"].description or ""
         )

@@ -433,9 +433,7 @@ def _format_context_note(note: Mapping[str, Any]) -> list[str]:
     tags = raw_tags if isinstance(raw_tags, list) else []
     tag_suffix = f" tags={','.join(map(str, tags[:5]))}" if tags else ""
     hash_suffix = f" hash={content_hash[:12]}" if content_hash else ""
-    lines = [
-        f"- [[{path.removesuffix('.md')}]] — {title} ({page_type}{tag_suffix}{hash_suffix})"
-    ]
+    lines = [f"- [[{path.removesuffix('.md')}]] — {title} ({page_type}{tag_suffix}{hash_suffix})"]
     why_included = str(note.get("why_included") or "").strip()
     if why_included:
         lines.append(f"  - why: {why_included[:240]}")
