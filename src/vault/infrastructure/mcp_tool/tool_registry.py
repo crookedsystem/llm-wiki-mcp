@@ -2,8 +2,10 @@ from datetime import date
 
 from mcp.server.fastmcp import FastMCP
 
+from vault.dto.request.context_request import ContextRequest
 from vault.dto.request.search_notes_request import SearchNotesRequest
 from vault.dto.request.write_note_request import WriteNoteRequest
+from vault.dto.response.context_response import ContextResponse, context_response
 from vault.dto.response.git_push_response import GitPushResponse, git_push_response
 from vault.dto.response.search_notes_response import (
     SearchNotesResponse,
@@ -13,7 +15,9 @@ from vault.dto.response.write_note_response import (
     WriteNoteResponse,
     write_note_response,
 )
+from vault.service.command.context_command import ContextMode
 from vault.service.command.write_note_command import ConfidenceLevel, WikiNoteType
+from vault.service.vault_context_service import VaultContextService
 from vault.service.vault_git_push_service import VaultGitPushService
 from vault.service.vault_search_service import VaultSearchService
 from vault.service.vault_write_service import VaultWriteService
@@ -23,6 +27,7 @@ def register_vault_tools(
     server: FastMCP[object],
     write_service: VaultWriteService,
     search_service: VaultSearchService,
+    context_service: VaultContextService,
     git_push_service: VaultGitPushService,
 ) -> None:
     @server.tool(
@@ -76,6 +81,28 @@ def register_vault_tools(
         request = SearchNotesRequest(query=query, limit=limit, path_prefix=path_prefix)
         result = search_service.search_notes(request.to_command())
         return search_notes_response(result)
+
+    @server.tool(
+        description=(
+            "Assemble sectioned wiki context for prompt, prewrite, or stop-hook use. "
+            "Returns orientation, entity candidates, project context, code conventions, "
+            "domain rules, direct matches, usage guidance, and entity creation criteria."
+        )
+    )
+    def kb_context(
+        query: str,
+        mode: ContextMode = "prompt",
+        limit: int = 16,
+        path_prefix: str | None = None,
+    ) -> ContextResponse:
+        request = ContextRequest(
+            query=query,
+            mode=mode,
+            limit=limit,
+            path_prefix=path_prefix,
+        )
+        result = context_service.context(request.to_command())
+        return context_response(result)
 
     @server.tool(
         description=(

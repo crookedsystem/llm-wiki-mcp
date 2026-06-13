@@ -30,13 +30,14 @@ from prompts.agent_hook import (  # noqa: E402 - import follows the sys.path boo
     STOP_UPDATE_REASON,
 )
 
-DEFAULT_LIMIT = 5
+DEFAULT_LIMIT = 12
 
 __all__ = [
     "STOP_UPDATE_REASON",
     "extract_prompt",
     "format_context_block",
     "format_context_error",
+    "load_context",
     "main",
 ]
 
@@ -70,6 +71,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Display name used in emitted context",
     )
     parser.add_argument("--query", help="Override user prompt/query text for context mode")
+    parser.add_argument(
+        "--context-mode",
+        choices=("prompt", "prewrite", "stop"),
+        default=os.environ.get("LLM_WIKI_HOOK_CONTEXT_MODE", "prompt"),
+        help="kb_context mode when the server supports sectioned context",
+    )
     parser.add_argument(
         "--limit",
         type=int,
@@ -137,9 +144,10 @@ def extract_prompt(event: Mapping[str, Any]) -> str:
 def run_context_mode(args: argparse.Namespace, query: str) -> int:
     try:
         payload = asyncio.run(
-            search_notes(
+            load_context(
                 server_url=args.server_url,
                 query=query,
+                mode=args.context_mode,
                 limit=max(args.limit, 1),
                 path_prefix=args.path_prefix,
                 timeout_seconds=max(args.timeout, 0.5),
@@ -149,7 +157,14 @@ def run_context_mode(args: argparse.Namespace, query: str) -> int:
         print(format_context_error(args.server_name, args.server_url, exc))
         return 0
 
-    print(format_context_block(args.server_name, args.server_url, payload))
+    print(
+        format_context_block(
+            args.server_name,
+            args.server_url,
+            payload,
+            max_results=max(args.limit, 1),
+        )
+    )
     return 0
 
 
@@ -169,6 +184,58 @@ def is_stop_hook_active(event: Mapping[str, Any]) -> bool:
     return bool(value)
 
 
+async def load_context(
+    *,
+    server_url: str,
+    query: str,
+    mode: str,
+    limit: int,
+    path_prefix: str | None,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    try:
+        return await context_notes(
+            server_url=server_url,
+            query=query,
+            mode=mode,
+            limit=limit,
+            path_prefix=path_prefix,
+            timeout_seconds=timeout_seconds,
+        )
+    except Exception:
+        return await search_notes(
+            server_url=server_url,
+            query=query,
+            limit=limit,
+            path_prefix=path_prefix,
+            timeout_seconds=timeout_seconds,
+        )
+
+
+async def context_notes(
+    *,
+    server_url: str,
+    query: str,
+    mode: str,
+    limit: int,
+    path_prefix: str | None,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    arguments: dict[str, Any] = {
+        "query": normalize_query(query),
+        "mode": mode,
+        "limit": limit,
+    }
+    if path_prefix:
+        arguments["path_prefix"] = path_prefix
+    return await call_mcp_tool(
+        server_url=server_url,
+        tool_name="kb_context",
+        arguments=arguments,
+        timeout_seconds=timeout_seconds,
+    )
+
+
 async def search_notes(
     *,
     server_url: str,
@@ -177,13 +244,27 @@ async def search_notes(
     path_prefix: str | None,
     timeout_seconds: float,
 ) -> dict[str, Any]:
-    from mcp.client.streamable_http import streamablehttp_client
-
-    from mcp import ClientSession
-
     arguments: dict[str, Any] = {"query": normalize_query(query), "limit": limit}
     if path_prefix:
         arguments["path_prefix"] = path_prefix
+    return await call_mcp_tool(
+        server_url=server_url,
+        tool_name="kb_search_notes",
+        arguments=arguments,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+async def call_mcp_tool(
+    *,
+    server_url: str,
+    tool_name: str,
+    arguments: dict[str, Any],
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    from mcp.client.streamable_http import streamablehttp_client
+
+    from mcp import ClientSession
 
     timeout = timedelta(seconds=timeout_seconds)
     async with (
@@ -195,7 +276,7 @@ async def search_notes(
         ClientSession(read_stream, write_stream, read_timeout_seconds=timeout) as session,
     ):
         await session.initialize()
-        result = await session.call_tool("kb_search_notes", arguments, read_timeout_seconds=timeout)
+        result = await session.call_tool(tool_name, arguments, read_timeout_seconds=timeout)
     return call_tool_result_to_dict(result)
 
 
@@ -231,7 +312,22 @@ def format_context_error(server_name: str, server_url: str, exc: Exception) -> s
     )
 
 
-def format_context_block(server_name: str, server_url: str, payload: Mapping[str, Any]) -> str:
+def format_context_block(
+    server_name: str,
+    server_url: str,
+    payload: Mapping[str, Any],
+    *,
+    max_results: int = DEFAULT_LIMIT,
+) -> str:
+    sections = payload.get("sections")
+    if isinstance(sections, list):
+        return format_sectioned_context_block(
+            server_name,
+            server_url,
+            payload,
+            max_results=max_results,
+        )
+
     results = payload.get("results")
     if not isinstance(results, list) or not results:
         return CONTEXT_EMPTY_TEMPLATE.format(server_name=server_name, server_url=server_url)
@@ -241,7 +337,7 @@ def format_context_block(server_name: str, server_url: str, payload: Mapping[str
         CONTEXT_HEADER_TEMPLATE.format(server_name=server_name, server_url=server_url),
         CONTEXT_RESULTS_INTRO,
     ]
-    for result in results[:DEFAULT_LIMIT]:
+    for result in results[:max_results]:
         if not isinstance(result, Mapping):
             continue
         path = str(result.get("path") or "(unknown)")
@@ -267,6 +363,92 @@ def format_context_block(server_name: str, server_url: str, payload: Mapping[str
 
     lines.extend([CONTEXT_FOOTER, CONTEXT_BLOCK_CLOSE])
     return "\n".join(lines)
+
+
+def format_sectioned_context_block(
+    server_name: str,
+    server_url: str,
+    payload: Mapping[str, Any],
+    *,
+    max_results: int,
+) -> str:
+    mode = str(payload.get("mode") or "prompt")
+    lines = [
+        CONTEXT_BLOCK_OPEN,
+        CONTEXT_HEADER_TEMPLATE.format(server_name=server_name, server_url=server_url),
+        f"Relevant existing wiki context from `kb_context` (mode={mode}):",
+    ]
+
+    usage = payload.get("usage")
+    if isinstance(usage, list) and usage:
+        lines.append("Usage:")
+        for item in usage[:3]:
+            lines.append(f"- {str(item)[:240]}")
+
+    entity_guidance = payload.get("entity_guidance")
+    if isinstance(entity_guidance, Mapping):
+        lines.append("Entity guidance:")
+        criteria = entity_guidance.get("criteria")
+        if isinstance(criteria, list):
+            for criterion in criteria[:2]:
+                lines.append(f"- {str(criterion)[:240]}")
+        prewrite_checks = entity_guidance.get("prewrite_checks")
+        if isinstance(prewrite_checks, list):
+            for check in prewrite_checks[:2]:
+                lines.append(f"- {str(check)[:240]}")
+
+    printed = 0
+    raw_sections = payload.get("sections")
+    sections = raw_sections if isinstance(raw_sections, list) else []
+    for section in sections:
+        if printed >= max_results or not isinstance(section, Mapping):
+            continue
+        raw_notes = section.get("notes")
+        notes = raw_notes if isinstance(raw_notes, list) else []
+        if not notes:
+            continue
+        section_name = str(section.get("name") or "context")
+        purpose = str(section.get("purpose") or "").strip()
+        suffix = f" — {purpose[:180]}" if purpose else ""
+        lines.append(f"{section_name}{suffix}")
+        for note in notes:
+            if printed >= max_results or not isinstance(note, Mapping):
+                break
+            lines.extend(_format_context_note(note))
+            printed += 1
+
+    if printed == 0:
+        lines.append("No matching section notes were found; use the entity guidance cautiously.")
+
+    lines.extend([CONTEXT_FOOTER, CONTEXT_BLOCK_CLOSE])
+    return "\n".join(lines)
+
+
+def _format_context_note(note: Mapping[str, Any]) -> list[str]:
+    path = str(note.get("path") or "(unknown)")
+    title = str(note.get("title") or path)
+    page_type = str(note.get("page_type") or "unknown")
+    content_hash = str(note.get("content_hash") or "")
+    raw_tags = note.get("tags")
+    tags = raw_tags if isinstance(raw_tags, list) else []
+    tag_suffix = f" tags={','.join(map(str, tags[:5]))}" if tags else ""
+    hash_suffix = f" hash={content_hash[:12]}" if content_hash else ""
+    lines = [
+        f"- [[{path.removesuffix('.md')}]] — {title} ({page_type}{tag_suffix}{hash_suffix})"
+    ]
+    why_included = str(note.get("why_included") or "").strip()
+    if why_included:
+        lines.append(f"  - why: {why_included[:240]}")
+    raw_matches = note.get("matches")
+    matches = raw_matches if isinstance(raw_matches, list) else []
+    for match in matches[:2]:
+        if not isinstance(match, Mapping):
+            continue
+        snippet = str(match.get("snippet") or "").strip()
+        line = match.get("line")
+        if snippet:
+            lines.append(f"  - L{line}: {snippet[:240]}")
+    return lines
 
 
 if __name__ == "__main__":

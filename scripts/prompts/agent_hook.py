@@ -25,7 +25,8 @@ Step 2 — If nothing qualifies: stop normally without writing, and say in one l
 judged this turn as not wiki-worthy.
 
 Step 3 — If something qualifies, use the configured llm-wiki MCP server to:
-1. search `SCHEMA.md`, `index.md`, recent `log.md`, and any affected entity/concept pages first;
+1. call `kb_context` with `mode="stop"` or `mode="prewrite"` first when available; otherwise
+   search `SCHEMA.md`, `index.md`, recent `log.md`, and any affected entity/concept pages;
 2. write only the durable knowledge identified in Step 1 (summarize — never copy private
    transcripts wholesale);
 3. update `index.md` and append a compact `log.md` entry for any durable wiki change;
