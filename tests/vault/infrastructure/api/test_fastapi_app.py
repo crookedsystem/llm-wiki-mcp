@@ -77,13 +77,38 @@ def test_fastapi_app은_tools_endpoint에서_mcp_tool_schema를_문서화한다(
     write_note = next(tool for tool in tools if tool["name"] == "kb_write_note")
     search_notes = next(tool for tool in tools if tool["name"] == "kb_search_notes")
     push_vault = next(tool for tool in tools if tool["name"] == "kb_push_vault")
-    assert "complete Markdown note" in write_note["description"]
+    assert "structured fields" in write_note["description"]
     assert "Search Markdown notes" in search_notes["description"]
     assert "push origin to the current branch" in push_vault["description"]
     assert write_note["inputSchema"]["type"] == "object"
-    assert write_note["inputSchema"]["required"] == ["note_path", "content"]
+    assert set(write_note["inputSchema"]["required"]) == {
+        "note_path",
+        "title",
+        "type",
+        "tags",
+        "sources",
+        "body",
+        "created",
+        "updated",
+    }
     assert write_note["inputSchema"]["properties"]["note_path"]["type"] == "string"
-    assert write_note["inputSchema"]["properties"]["content"]["type"] == "string"
+    assert write_note["inputSchema"]["properties"]["title"]["type"] == "string"
+    assert write_note["inputSchema"]["properties"]["type"]["enum"] == [
+        "raw",
+        "entity",
+        "concept",
+        "comparison",
+        "query",
+        "summary",
+        "schema",
+        "index",
+        "log",
+    ]
+    assert write_note["inputSchema"]["properties"]["tags"]["type"] == "array"
+    assert write_note["inputSchema"]["properties"]["sources"]["type"] == "array"
+    assert write_note["inputSchema"]["properties"]["body"]["type"] == "string"
+    assert write_note["inputSchema"]["properties"]["created"]["format"] == "date"
+    assert "content" not in write_note["inputSchema"]["properties"]
     assert write_note["outputSchema"]["type"] == "object"
     assert search_notes["inputSchema"]["required"] == ["query"]
     assert search_notes["inputSchema"]["properties"]["query"]["type"] == "string"

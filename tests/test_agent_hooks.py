@@ -44,6 +44,9 @@ def test_format_context_block은_search_결과를_compact_context로_만든다()
     assert "hash=abcdef123456" in block
     assert "SCHEMA.md defines page taxonomy" in block
     assert "kb_write_note" in block
+    assert "structured fields" in block
+    assert "do not pass complete Markdown" in block
+    assert "write complete Markdown" not in block
 
 
 def test_format_context_error는_fail_open_안내를_출력한다() -> None:

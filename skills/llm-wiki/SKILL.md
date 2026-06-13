@@ -19,7 +19,7 @@ Do not use it for one-off answers that should not be saved, or when the MCP serv
 
 The main wiki workflow uses these tool names:
 
-- `kb_write_note(note_path, content, if_hash?)` — write a complete note inside the configured vault. Existing notes require optimistic concurrency.
+- `kb_write_note(note_path, title, type, tags, sources, body, created, updated, confidence?, contested?, if_hash?)` — write a note inside the configured vault from structured fields. The server renders YAML frontmatter, the top-level title heading, the body, and provenance. Existing notes require optimistic concurrency.
 - `kb_search_notes(query, limit?, path_prefix?)` — search the Markdown LLM Wiki vault and return ranked paths, titles, page types, tags, content hashes, and line snippets.
 
 Vault and graph counters are exposed as a REST API endpoint at `GET /metrics`, not as MCP tools.
@@ -54,8 +54,8 @@ queries/         # valuable answered questions worth preserving
 2. Orient before writing. If the vault is directly readable through file tools, read `SCHEMA.md`, `index.md`, and the recent tail of `log.md`. If direct file reads are unavailable, use `kb_search_notes` for `SCHEMA`, `index`, `log`, and topic-specific searches.
 3. Search for existing pages before creating new ones. Avoid duplicate entity or concept pages.
 4. Decide the access mode:
-   - **File-readable mode:** safe to update existing notes because you can read the complete current file, reconstruct it, and pass the exact current `content_hash` as `if_hash`.
-   - **MCP-only mode:** `kb_search_notes` returns snippets, not full note bodies. Do not overwrite an existing note from snippets alone. Create new notes only, or ask the user for the full current note content before updating.
+   - **File-readable mode:** safe to update existing notes because you can read the complete current file, preserve existing metadata/body intentionally, and pass the exact current `content_hash` as `if_hash`.
+   - **MCP-only mode:** `kb_search_notes` returns snippets, not full note bodies or every frontmatter field. Do not overwrite an existing note from snippets alone. Create new notes only, or ask the user for the full current note content before updating.
 
 ## Content model and page types
 
@@ -68,6 +68,10 @@ Use the `type` frontmatter value to decide where a page belongs and how readers 
 | `comparison` | `comparisons/` | Tradeoff analysis, A-vs-B decisions, rankings, matrices, migration choices | Simple summaries of one thing |
 | `query` | `queries/` | A substantial answered question, investigation, synthesis, or research result worth reusing | Trivial lookups or temporary chat answers |
 | `summary` | Usually `concepts/` or `queries/` | Cross-cutting overview pages and topic maps | Pages that can be classified more specifically |
+| `raw` | `raw/` | Immutable source material and ingested references | Agent synthesis or conclusions |
+| `schema` | `SCHEMA.md` | Vault-wide schema and operating conventions | Topic pages |
+| `index` | `index.md` | Navigational catalog | Research notes |
+| `log` | `log.md` | Append-only audit trail | Topic synthesis |
 
 ### Page creation thresholds
 
@@ -82,14 +86,14 @@ Create or update pages only when the content improves future retrieval:
 
 ### Required frontmatter
 
-Every synthesized wiki page starts with YAML frontmatter:
+Every wiki page is written through structured fields that render YAML frontmatter:
 
 ```yaml
 ---
 title: Page Title
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-type: entity | concept | comparison | query | summary
+type: raw | entity | concept | comparison | query | summary | schema | index | log
 tags: [tag-from-schema]
 sources: [raw/articles/source-file.md]
 confidence: high | medium | low
@@ -97,15 +101,22 @@ contested: false
 ---
 ```
 
-`confidence` and `contested` are optional but useful. Use `confidence: low` for single-source, speculative, or fast-moving claims. Use `contested: true` when sources conflict and explain the conflict in the body.
+`title`, `created`, `updated`, `type`, `tags`, `sources`, and `body` are required tool arguments. `confidence` and `contested` are optional but useful. Use `confidence: low` for single-source, speculative, or fast-moving claims. Use `contested: true` when sources conflict and explain the conflict in the body.
+
+Path and type must agree:
+
+- `raw/**` uses `type: raw`.
+- `entities/**` uses `type: entity`.
+- `concepts/**` uses `type: concept` or `type: summary`.
+- `comparisons/**` uses `type: comparison`.
+- `queries/**` uses `type: query` or `type: summary`.
+- `SCHEMA.md`, `index.md`, and `log.md` use `type: schema`, `type: index`, and `type: log` respectively.
 
 ### Page body pattern
 
-Keep pages scannable. Prefer this shape unless the vault `SCHEMA.md` says otherwise:
+Keep pages scannable. The tool renders `# Page Title`; pass only the section body. Prefer this shape unless the vault `SCHEMA.md` says otherwise:
 
 ```markdown
-# Page Title
-
 ## Summary
 One short paragraph explaining why this page matters.
 
@@ -127,7 +138,7 @@ Every new synthesized page should have at least two useful outbound `[[wikilinks
 
 ## SCHEMA.md bootstrap
 
-If `SCHEMA.md` is missing or the user is creating a new vault, create it before writing topic pages. Do not rely on an external schema that does not exist. Use this minimal schema and customize the domain/tags:
+If `SCHEMA.md` is missing or the user is creating a new vault, create it before writing topic pages. Do not rely on an external schema that does not exist. Write `SCHEMA.md` itself through `kb_write_note` with `type: schema`, then customize the domain/tags:
 
 ```markdown
 # Wiki Schema
@@ -150,7 +161,7 @@ If `SCHEMA.md` is missing or the user is creating a new vault, create it before 
 
 ## Frontmatter
 Required fields: `title`, `created`, `updated`, `type`, `tags`, `sources`.
-Allowed `type` values: `entity`, `concept`, `comparison`, `query`, `summary`.
+Allowed `type` values: `raw`, `entity`, `concept`, `comparison`, `query`, `summary`, `schema`, `index`, `log`.
 
 ## Tag taxonomy
 [List 10-20 allowed tags for this domain before using them.]
@@ -207,27 +218,28 @@ Rotate to `log-YYYY.md` if `log.md` becomes too large, then start a fresh `log.m
 
 ## Provenance and hash rules
 
-`kb_write_note` appends a provenance trailer automatically after the content you provide:
+`kb_write_note` appends a provenance trailer automatically after the rendered note:
 
 ```markdown
 <!-- kb-provenance: source_hash=<sha256-of-content-before-trailer>; operation=write_note; actor=llm-wiki -->
 ```
 
-Do not hand-author that trailer in the `content` argument unless you are intentionally doing a direct-file fallback outside MCP. Hashes have different meanings:
+Do not hand-author that trailer in the `body` argument unless you are intentionally doing a direct-file fallback outside MCP. Hashes have different meanings:
 
-- `source_hash` is SHA-256 of the content before the server-added trailer.
+- `source_hash` is SHA-256 of the rendered note before the server-added trailer.
 - `content_hash` is SHA-256 of the final stored file, including the provenance trailer.
 - For the next update, pass `content_hash` as `if_hash`, not `source_hash`.
 - When updating from direct filesystem reads, compute SHA-256 over the exact current file text, including the provenance trailer and final newline.
 
 ## Write policy
 
-- `kb_write_note` writes the full note body. For updates, reconstruct the full target file and pass the current full-file hash as `if_hash`.
+- `kb_write_note` writes structured note fields. Do not pass a complete Markdown file. Pass `body` without YAML frontmatter, without the provenance trailer, and without a top-level `# Title` heading; the tool renders those parts.
+- For updates, preserve intended existing fields/body, pass the current full-file `content_hash` as `if_hash`, and send the complete replacement field set.
 - Keep raw sources under `raw/` immutable. Corrections and synthesis belong in wiki pages such as `entities/`, `concepts/`, `comparisons/`, or `queries/`.
 - Every meaningful write should update `index.md` and append a concise entry to `log.md` unless the user explicitly requests a draft-only note.
 - Use lowercase kebab-case note paths such as `concepts/llm-wiki.md` and `entities/anthropic.md`.
 - Prefer `[[wikilinks]]` between wiki pages. New synthesized pages should have at least two useful outbound links when possible.
-- Preserve YAML frontmatter on wiki pages: `title`, `created`, `updated`, `type`, `tags`, and `sources`.
+- Preserve YAML frontmatter fields by resubmitting structured arguments: `title`, `created`, `updated`, `type`, `tags`, and `sources`.
 
 ## LLM Wiki page flow
 
@@ -259,9 +271,26 @@ kb_search_notes(query="context hook", limit=5, path_prefix="concepts")
 
 ## Concrete examples
 
-### Complete synthesized note content
+### Structured synthesized note call
 
-This is the `content` you pass to `kb_write_note`; the server appends the provenance trailer after the final line.
+These are the fields you pass to `kb_write_note`; the server renders frontmatter, `# LLM Wiki`, and the provenance trailer.
+
+```json
+{
+  "note_path": "concepts/llm-wiki.md",
+  "title": "LLM Wiki",
+  "type": "concept",
+  "tags": ["knowledge-base", "agent-memory"],
+  "sources": ["raw/articles/karpathy-llm-wiki.md"],
+  "created": "2026-06-09",
+  "updated": "2026-06-09",
+  "confidence": "medium",
+  "contested": false,
+  "body": "## Summary\nAn LLM Wiki is an agent-maintained Markdown knowledge base where raw sources stay immutable and synthesized pages accumulate durable context for future work.\n\n## Key facts\n- It differs from one-shot RAG because synthesis is saved once and reused later.\n- A useful vault separates `raw/` source material from synthesized pages such as [[concepts/agent-memory]] and [[comparisons/rag-vs-llm-wiki]].\n\n## Relationships\n- [[concepts/agent-memory]] — persistent context strategy for agents.\n- [[comparisons/rag-vs-llm-wiki]] — tradeoffs between retrieval and compiled wiki context.\n\n## Open questions\n- Which updates should be automatic at task stop time versus manually reviewed?\n\n## Sources\n- raw/articles/karpathy-llm-wiki.md"
+}
+```
+
+The rendered note begins like this before the provenance trailer:
 
 ```markdown
 ---
@@ -269,8 +298,11 @@ title: LLM Wiki
 created: 2026-06-09
 updated: 2026-06-09
 type: concept
-tags: [knowledge-base, agent-memory]
-sources: [raw/articles/karpathy-llm-wiki.md]
+tags:
+  - knowledge-base
+  - agent-memory
+sources:
+  - raw/articles/karpathy-llm-wiki.md
 confidence: medium
 contested: false
 ---
@@ -312,9 +344,9 @@ An LLM Wiki is an agent-maintained Markdown knowledge base where raw sources sta
 
 ## Hook-driven always-on usage
 
-Use hooks or wrappers to make LLM Wiki context part of every agent turn. The repository setup script installs reusable hook commands by default (`uv run python scripts/main.py`, or per-agent with `--agent`). Pass `--no-hooks` or set `LLM_WIKI_INSTALL_HOOKS=false` only when you want to wire hooks manually.
+Use hooks or wrappers to make LLM Wiki context part of every agent turn. The repository setup script installs reusable context hook commands by default (`uv run python scripts/main.py`, or per-agent with `--agent`). Pass `--no-hooks` or set `LLM_WIKI_INSTALL_HOOKS=false` only when you want to wire hooks manually. During setup, the Stop hook is opt-in: the installer warns that it may prevent the LLM response from being delivered correctly, then waits until the operator enters uppercase `Y` or `N`. `Y` installs the Stop hook, `N` continues with only the context hook, invalid input repeats the prompt, and non-interactive stdin/EOF aborts before installation.
 
-The generated scripts call `scripts/agent_hooks/llm_wiki_agent_hook.py` in two modes:
+When both hooks are installed, the generated scripts call `scripts/agent_hooks/llm_wiki_agent_hook.py` in two modes:
 
 - **User-input hook:** search the wiki through `kb_search_notes` at prompt time and inject a compact `<llm-wiki-context>` block before the model starts working.
 - **Stop hook:** after the model finishes, force one final wiki update pass that records durable discoveries, decisions, and changed context through MCP.
@@ -323,7 +355,7 @@ The hook should run every time, but it should not create noisy pages every time.
 
 ### Claude Code hook shape
 
-Claude Code supports project/user hook events such as `UserPromptSubmit` and `Stop`. Setup installs `llm-wiki-context-hook.sh` and `llm-wiki-stop-hook.sh` under `${CLAUDE_HOOKS_DIR:-~/.claude/hooks/llm-wiki}/` and merges equivalent entries into `${CLAUDE_SETTINGS_PATH:-~/.claude/settings.json}`. A project-local `.claude/settings.json` can use the same shape if you prefer project hooks:
+Claude Code supports project/user hook events such as `UserPromptSubmit` and `Stop`. Setup installs `llm-wiki-context-hook.sh` under `${CLAUDE_HOOKS_DIR:-~/.claude/hooks/llm-wiki}/`; it installs `llm-wiki-stop-hook.sh` and merges the `Stop` entry only when the setup prompt is answered with uppercase `Y`. A project-local `.claude/settings.json` can use the same shape if you prefer project hooks:
 
 ```json
 {
@@ -356,15 +388,15 @@ Claude Code supports project/user hook events such as `UserPromptSubmit` and `St
 
 `llm-wiki-context-hook.sh` should read the incoming prompt metadata from stdin when the agent provides it, query `kb_search_notes` or a local helper for `SCHEMA.md`, `index.md`, recent `log.md`, and topic matches, then print a compact context block to stdout. Keep it short enough that it helps rather than flooding the prompt.
 
-`llm-wiki-stop-hook.sh` should read the session/transcript metadata available to the hook, decide what durable knowledge changed, then use `kb_search_notes` plus `kb_write_note` to update pages, `index.md`, and `log.md` with optimistic concurrency. The installed Claude/Codex stop hook emits a one-time `decision=block` response so the agent performs that update pass before its final stop; it must not block again when `stop_hook_active=true`.
+`llm-wiki-stop-hook.sh` should read the session/transcript metadata available to the hook, decide what durable knowledge changed, then use `kb_search_notes` plus `kb_write_note` to update pages, `index.md`, and `log.md` with optimistic concurrency. When selected during setup, the Claude/Codex stop hook emits a one-time `decision=block` response so the agent performs that update pass before its final stop; it must not block again when `stop_hook_active=true`.
 
-The two architectures for stop-time updates — **in-loop** (re-prompt the same session via `decision=block`) versus **out-of-loop** (a stop hook spawns a separate headless writer such as `claude -p` / `codex exec`) — and their trade-offs are compared in the vault concept page `[[concepts/agent-stop-hook-self-update]]`. This skill installs the in-loop variant for Claude Code and Codex; see the headless fallback note below for unattended setups.
+The two architectures for stop-time updates — **in-loop** (re-prompt the same session via `decision=block`) versus **out-of-loop** (a stop hook spawns a separate headless writer such as `claude -p` / `codex exec`) — and their trade-offs are compared in the vault concept page `[[concepts/agent-stop-hook-self-update]]`. When selected during setup, this skill installs the in-loop variant for Claude Code and Codex; see the headless fallback note below for unattended setups.
 
 ### Codex enforcement pattern (native hooks)
 
 Codex (2026+) shares Claude Code's hook JSON schema: the same `hooks` object, the same `UserPromptSubmit`/`Stop` event names, the same `{type, command, timeout}` shape, the same stdin payload (`transcript_path`, `stop_hook_active`, `last_assistant_message`), and the same `decision=block` + `reason` Stop semantics. So the Claude hook JSON ports directly — only the destination file differs.
 
-Setup installs this skill under `$CODEX_HOME/skills/llm-wiki/`, configures `[mcp_servers.llm_wiki]`, writes the context/stop scripts under `${CODEX_LLM_WIKI_HOOKS_DIR:-${CODEX_HOME:-~/.codex}/hooks/llm-wiki}/`, and merges `UserPromptSubmit`/`Stop` entries into `${CODEX_HOOKS_JSON_PATH:-~/.codex/hooks.json}`. Codex also accepts an inline `[hooks]` table in `config.toml`. Equivalent `hooks.json`:
+Setup installs this skill under `$CODEX_HOME/skills/llm-wiki/`, configures `[mcp_servers.llm_wiki]`, writes the context script under `${CODEX_LLM_WIKI_HOOKS_DIR:-${CODEX_HOME:-~/.codex}/hooks/llm-wiki}/`, and merges the `UserPromptSubmit` entry into `${CODEX_HOOKS_JSON_PATH:-~/.codex/hooks.json}`. When the setup prompt is answered with uppercase `Y`, it also writes the stop script and merges the `Stop` entry. Codex also accepts an inline `[hooks]` table in `config.toml`. Equivalent `hooks.json` when Stop hook is enabled:
 
 ```json
 {
@@ -383,7 +415,7 @@ Setup installs this skill under `$CODEX_HOME/skills/llm-wiki/`, configures `[mcp
 
 Hermes exposes only finalize-style session hooks (`on_session_start`/`on_session_end`/`on_session_finalize`/`subagent_stop`, plus `pre/post_tool_call`) declared in `cli-config.yaml`; it pipes a JSON payload to the hook on stdin and reads stdout JSON back. These finalize hooks do **not** support Claude-style `decision=block` re-prompting, so the in-loop pattern does not apply — use the **out-of-loop** model: a finalize hook triggers a separate update pass rather than re-running the same session.
 
-Setup installs this skill, configures the `llm_wiki` MCP server, and writes reusable hook commands under `${HERMES_LLM_WIKI_HOOKS_DIR:-${HERMES_HOME:-~/.hermes}/hooks/llm-wiki}/`. The minimum reliable setup is to start sessions with the skill loaded or call `/skill llm-wiki`; for automation, wire the generated context/stop scripts into a Hermes plugin, wrapper command, or finalize hook. Non-interactive runs (gateway, cron) must allow hooks with `--accept-hooks`, `HERMES_ACCEPT_HOOKS=1`, or the `hooks_auto_accept` config key.
+Setup installs this skill, configures the `llm_wiki` MCP server, and writes reusable hook commands under `${HERMES_LLM_WIKI_HOOKS_DIR:-${HERMES_HOME:-~/.hermes}/hooks/llm-wiki}/`. The minimum reliable setup is to start sessions with the skill loaded or call `/skill llm-wiki`; for automation, wire the generated context script and optional stop script into a Hermes plugin, wrapper command, or finalize hook. Non-interactive runs (gateway, cron) must allow hooks with `--accept-hooks`, `HERMES_ACCEPT_HOOKS=1`, or the `hooks_auto_accept` config key.
 
 ### Headless fallback (any client, unattended)
 

@@ -1,6 +1,6 @@
 import asyncio
 import subprocess
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from pytest import MonkeyPatch
@@ -28,14 +28,23 @@ def test_git_repository가_연결된_note_작성은_commit_hash를_반환한다(
 
         # When: note를 작성한다.
         result = await writer.write_note(
-            WriteNoteCommand(note_path="daily/today.md", content="Body text")
+            WriteNoteCommand(
+                note_path="concepts/today.md",
+                title="Today",
+                type="concept",
+                tags=("git",),
+                sources=("raw/articles/source.md",),
+                body="## Summary\nBody text",
+                created=date(2026, 6, 12),
+                updated=date(2026, 6, 12),
+            )
         )
 
         # Then: 작성된 note는 git commit에 포함되고 40자리 commit hash가 반환된다.
         assert result.commit_hash is not None
         assert len(result.commit_hash) == 40
         assert _git_stdout(vault_root, "rev-parse", "HEAD") == result.commit_hash
-        assert "daily/today.md" in _git_stdout(
+        assert "concepts/today.md" in _git_stdout(
             vault_root,
             "show",
             "--name-only",

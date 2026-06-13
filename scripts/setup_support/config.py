@@ -29,6 +29,7 @@ class ResolvedConfig:
     codex_skills_dir: Path
     codex_config_path: Path
     install_hooks: bool
+    install_stop_hook: bool
     hermes_hooks_dir: Path
     claude_hooks_dir: Path
     claude_settings_path: Path
@@ -140,6 +141,7 @@ def resolve_config(
     claude_scope: str | None = None,
     codex_config_path: str | None = None,
     install_hooks: bool | None = None,
+    install_stop_hook: bool = False,
     claude_settings_path: str | None = None,
 ) -> ResolvedConfig:
     effective_env_file = (env_file or repo_root / ".env").expanduser().resolve()
@@ -162,6 +164,7 @@ def resolve_config(
         if install_hooks is None
         else install_hooks
     )
+    resolved_install_stop_hook = resolved_install_hooks and install_stop_hook
     hermes_hooks_dir = Path(
         env.get("HERMES_LLM_WIKI_HOOKS_DIR", str(hermes_home / "hooks" / "llm-wiki"))
     ).expanduser()
@@ -194,6 +197,7 @@ def resolve_config(
         codex_skills_dir=codex_skills_dir,
         codex_config_path=resolved_codex_config_path,
         install_hooks=resolved_install_hooks,
+        install_stop_hook=resolved_install_stop_hook,
         hermes_hooks_dir=hermes_hooks_dir,
         claude_hooks_dir=claude_hooks_dir,
         claude_settings_path=resolved_claude_settings_path,

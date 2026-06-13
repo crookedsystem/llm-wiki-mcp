@@ -72,7 +72,18 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
         tools = await server.list_tools()
         _, write_result = await server.call_tool(
             "kb_write_note",
-            {"note_path": "concepts/agent-memory.md", "content": "# Agent Memory\n"},
+            {
+                "note_path": "concepts/agent-memory.md",
+                "title": "Agent Memory",
+                "type": "concept",
+                "tags": ["agent-memory"],
+                "sources": ["raw/articles/source.md"],
+                "body": "## Summary\nAgent memory keeps durable context.",
+                "created": "2026-06-12",
+                "updated": "2026-06-12",
+                "confidence": "medium",
+                "contested": False,
+            },
         )
         structured_write_result = cast(WriteNoteToolResult, write_result)
         _, search_result = await server.call_tool("kb_search_notes", {"query": "agent memory"})
@@ -81,7 +92,7 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
         # Then: MCP는 쓰기/검색/push tool을 노출하고 각 tool description은 비어 있지 않다.
         tool_by_name = {tool.name: tool for tool in tools}
         assert set(tool_by_name) == {"kb_write_note", "kb_search_notes", "kb_push_vault"}
-        assert "complete Markdown note" in (tool_by_name["kb_write_note"].description or "")
+        assert "structured fields" in (tool_by_name["kb_write_note"].description or "")
         assert "Search Markdown notes" in (tool_by_name["kb_search_notes"].description or "")
         assert "push origin to the current branch" in (
             tool_by_name["kb_push_vault"].description or ""
