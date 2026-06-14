@@ -1,4 +1,5 @@
 import io
+import subprocess
 import sys
 from pathlib import Path
 
@@ -163,6 +164,36 @@ def test_setup_cli는_agent_옵션이_없으면_전체_agent를_설치한다(
 
     assert result == 0
     assert installed_agents == ["hermes", "claude", "codex"]
+
+
+def test_setup_cli는_일부_agent_설치가_실패해도_나머지_agent를_계속_설치한다(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+) -> None:
+    installed_agents: list[str] = []
+
+    def fake_install_agent(config: ResolvedConfig) -> int:
+        installed_agents.append(config.agent)
+        if config.agent == "hermes":
+            raise subprocess.CalledProcessError(
+                126,
+                ["hermes", "mcp", "add", config.server_name, "--url", config.server_url],
+                stderr="missing hermes config directory",
+            )
+        return 0
+
+    monkeypatch.setattr(cli, "install_agent", fake_install_agent)
+    env_file = tmp_path / ".env"
+    env_file.write_text("KB_PORT=18083\n", encoding="utf-8")
+
+    result = cli.run(["--env-file", str(env_file), "--dry-run", "--no-hooks"])
+
+    captured = capsys.readouterr()
+    assert result == 126
+    assert installed_agents == ["hermes", "claude", "codex"]
+    assert "hermes install failed" in captured.err
+    assert "missing hermes config directory" in captured.err
 
 
 def test_setup_cli는_agent_옵션으로_일부_agent만_설치한다(

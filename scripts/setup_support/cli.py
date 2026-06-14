@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
 from typing import TextIO
 
-from setup_support.config import DEFAULT_SERVER_NAMES, repo_root_from_script, resolve_config
+from setup_support.config import (
+    DEFAULT_SERVER_NAMES,
+    ResolvedConfig,
+    repo_root_from_script,
+    resolve_config,
+)
 from setup_support.installers import install_agent
 
 AGENTS = tuple(DEFAULT_SERVER_NAMES)
@@ -59,10 +65,31 @@ def run(argv: list[str] | None = None) -> int:
         print(f"== {agent} ==")
         print(f"Using env file: {config.env_file}")
         print(f"Resolved MCP server: {config.server_name} -> {config.server_url}")
-        result = install_agent(config)
+        result = _install_agent_fail_open(agent, config)
         if result != 0:
             status = result
     return status
+
+
+def _install_agent_fail_open(agent: str, config: ResolvedConfig) -> int:
+    try:
+        return install_agent(config)
+    except subprocess.CalledProcessError as exc:
+        _print_install_error(
+            agent,
+            f"command {exc.cmd!r} exited with status {exc.returncode}",
+            exc.stderr,
+        )
+        return exc.returncode or 1
+    except OSError as exc:
+        _print_install_error(agent, str(exc))
+        return 1
+
+
+def _print_install_error(agent: str, message: str, detail: str | None = None) -> None:
+    print(f"{agent} install failed: {message}", file=sys.stderr)
+    if detail and detail.strip():
+        print(detail.strip(), file=sys.stderr)
 
 
 def build_parser() -> argparse.ArgumentParser:
