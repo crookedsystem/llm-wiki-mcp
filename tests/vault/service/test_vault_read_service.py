@@ -85,8 +85,7 @@ def test_read후_full_body_patch와_matching_hash로_기존_note를_재작성한
 
         # When: 기존 body 전체를 보존한 채 새 entry를 추가하고 if_hash로 재작성한다.
         patched_body = (
-            f"{read_result.body}\n"
-            "- [[entities/fanplus-old-api]] — Legacy FanPlus API boundary."
+            f"{read_result.body}\n- [[entities/fanplus-old-api]] — Legacy FanPlus API boundary."
         )
         update_result = await writer.write_note(
             WriteNoteCommand(
