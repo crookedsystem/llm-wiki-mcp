@@ -1,10 +1,12 @@
 from mcp.server.fastmcp import FastMCP
 
 from vault.dto.request.context_request import ContextRequest
+from vault.dto.request.read_note_request import ReadNoteRequest
 from vault.dto.request.search_notes_request import SearchNotesRequest
 from vault.dto.request.write_note_request import WriteNoteRequest
 from vault.dto.response.context_response import ContextResponse, ContextResponseMapper
 from vault.dto.response.git_push_response import GitPushResponse, git_push_response
+from vault.dto.response.read_note_response import ReadNoteResponse, read_note_response
 from vault.dto.response.search_notes_response import (
     SearchNotesResponse,
     search_notes_response,
@@ -18,17 +20,31 @@ from vault.service.command.write_note_command import ConfidenceLevel, WikiNoteTy
 from vault.service.note_timestamp import NoteTimestamp
 from vault.service.vault_context_service import VaultContextService
 from vault.service.vault_git_push_service import VaultGitPushService
+from vault.service.vault_read_service import VaultReadService
 from vault.service.vault_search_service import VaultSearchService
 from vault.service.vault_write_service import VaultWriteService
 
 
 def register_vault_tools(
     server: FastMCP[object],
+    read_service: VaultReadService,
     write_service: VaultWriteService,
     search_service: VaultSearchService,
     context_service: VaultContextService,
     git_push_service: VaultGitPushService,
 ) -> None:
+    @server.tool(
+        description=(
+            "Read a complete existing Markdown wiki note as structured fields for safe "
+            "full-replacement updates. Returns frontmatter fields, body without YAML/title/"
+            "provenance, and the current content_hash to pass as if_hash to kb_write_note."
+        )
+    )
+    def kb_read_note(note_path: str) -> ReadNoteResponse:
+        request = ReadNoteRequest(note_path=note_path)
+        result = read_service.read_note(request.to_command())
+        return read_note_response(result)
+
     @server.tool(
         description=(
             "Write a Markdown wiki note from structured fields. The tool renders YAML "

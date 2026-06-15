@@ -6,6 +6,7 @@ from common.config import Settings
 from vault.infrastructure.mcp_tool.tool_registry import register_vault_tools
 from vault.service.vault_context_service import VaultContextService
 from vault.service.vault_git_push_service import VaultGitPushService
+from vault.service.vault_read_service import VaultReadService
 from vault.service.vault_search_service import VaultSearchService
 from vault.service.vault_write_service import VaultWriteService
 
@@ -18,6 +19,7 @@ def _mcp_log_level(settings: Settings) -> McpLogLevel:
 
 def create_mcp_server(
     settings: Settings,
+    read_service: VaultReadService,
     write_service: VaultWriteService,
     search_service: VaultSearchService,
     context_service: VaultContextService,
@@ -32,6 +34,7 @@ def create_mcp_server(
     )
     register_vault_tools(
         server,
+        read_service,
         write_service,
         search_service,
         context_service,
