@@ -17,6 +17,20 @@ class WriteNoteToolResult(TypedDict):
     content_hash: str
 
 
+class ReadNoteToolResult(TypedDict):
+    path: str
+    title: str
+    type: str
+    tags: list[str]
+    sources: list[str]
+    body: str
+    created: str
+    updated: str
+    confidence: str | None
+    contested: bool | None
+    content_hash: str
+
+
 class SearchNoteToolResult(TypedDict):
     path: str
     content_hash: str
@@ -50,6 +64,7 @@ def test_mcp_server는_기본_http_설정을_사용한다(tmp_path: Path) -> Non
     runtime = create_runtime(app_settings)
     server = create_mcp_server(
         app_settings,
+        runtime.read_service,
         runtime.write_service,
         runtime.search_service,
         runtime.context_service,
@@ -75,6 +90,7 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
         runtime = create_runtime(settings)
         server = create_mcp_server(
             settings,
+            runtime.read_service,
             runtime.write_service,
             runtime.search_service,
             runtime.context_service,
@@ -101,17 +117,26 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
         structured_write_result = cast(WriteNoteToolResult, write_result)
         _, search_result = await server.call_tool("kb_search_notes", {"query": "agent memory"})
         structured_search_result = cast(SearchToolResult, search_result)
+        _, read_result = await server.call_tool(
+            "kb_read_note",
+            {"note_path": "concepts/agent-memory.md"},
+        )
+        structured_read_result = cast(ReadNoteToolResult, read_result)
         _, context_result = await server.call_tool("kb_context", {"query": "agent memory"})
         structured_context_result = cast(ContextToolResult, context_result)
 
         # Then: MCP는 쓰기/검색/push tool을 노출하고 각 tool description은 비어 있지 않다.
         tool_by_name = {tool.name: tool for tool in tools}
         assert set(tool_by_name) == {
+            "kb_read_note",
             "kb_write_note",
             "kb_search_notes",
             "kb_context",
             "kb_push_vault",
         }
+        assert "Read a complete existing Markdown wiki note" in (
+            tool_by_name["kb_read_note"].description or ""
+        )
         assert "structured fields" in (tool_by_name["kb_write_note"].description or "")
         assert "Search Markdown notes" in (tool_by_name["kb_search_notes"].description or "")
         assert "wiki link context map" in (tool_by_name["kb_context"].description or "")
@@ -119,6 +144,17 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
             tool_by_name["kb_push_vault"].description or ""
         )
         assert structured_write_result["source_hash"]
+        assert structured_read_result["path"] == "concepts/agent-memory.md"
+        assert structured_read_result["title"] == "Agent Memory"
+        assert structured_read_result["type"] == "concept"
+        assert structured_read_result["tags"] == ["agent-memory"]
+        assert structured_read_result["sources"] == ["raw/articles/source.md"]
+        assert structured_read_result["body"] == "## Summary\nAgent memory keeps durable context."
+        assert structured_read_result["created"] == "2026-06-12T09:30:45Z"
+        assert structured_read_result["updated"] == "2026-06-12T10:31:46Z"
+        assert structured_read_result["confidence"] == "medium"
+        assert structured_read_result["contested"] is False
+        assert structured_read_result["content_hash"] == structured_write_result["content_hash"]
         results = structured_search_result["results"]
         assert structured_search_result["count"] == 1
         assert results[0]["path"] == "concepts/agent-memory.md"
@@ -144,6 +180,7 @@ def test_mcp_server는_write_timestamp의_초단위_UTC_Z_datetime을_검증한�
         runtime = create_runtime(settings)
         server = create_mcp_server(
             settings,
+            runtime.read_service,
             runtime.write_service,
             runtime.search_service,
             runtime.context_service,
@@ -205,6 +242,7 @@ def test_mcp_push_tool은_vault_변경사항을_commit하고_push한다(
         runtime = create_runtime(settings)
         server = create_mcp_server(
             settings,
+            runtime.read_service,
             runtime.write_service,
             runtime.search_service,
             runtime.context_service,

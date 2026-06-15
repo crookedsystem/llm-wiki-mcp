@@ -14,6 +14,7 @@ from vault.infrastructure.repository.vault_note_repository import (
 from vault.service.vault_context_service import VaultContextService
 from vault.service.vault_git_push_service import VaultGitPushService
 from vault.service.vault_inspection_service import VaultInspectionService
+from vault.service.vault_read_service import VaultReadService
 from vault.service.vault_search_service import VaultSearchService
 from vault.service.vault_write_service import VaultWriteService
 
@@ -21,6 +22,7 @@ from vault.service.vault_write_service import VaultWriteService
 class Runtime(FrozenModel):
     note_repository: VaultNoteRepository
     write_queue: VaultWriteQueue
+    read_service: VaultReadService
     write_service: VaultWriteService
     git_push_service: VaultGitPushService
     search_service: VaultSearchService
@@ -46,8 +48,10 @@ class RuntimeRegistry:
         write_queue = VaultWriteQueue()
         note_repository = VaultNoteRepository(root=vault_root)
         git_repository = GitRepository(root=vault_root)
+        paths = VaultPaths(root=vault_root)
+        read_service = VaultReadService(paths=paths)
         write_service = VaultWriteService(
-            paths=VaultPaths(root=vault_root),
+            paths=paths,
             queue=write_queue,
             actor="llm-wiki",
         )
@@ -58,6 +62,7 @@ class RuntimeRegistry:
         return Runtime(
             note_repository=note_repository,
             write_queue=write_queue,
+            read_service=read_service,
             write_service=write_service,
             git_push_service=git_push_service,
             search_service=search_service,

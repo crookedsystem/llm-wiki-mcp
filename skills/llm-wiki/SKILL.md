@@ -20,6 +20,7 @@ Do not use it for one-off answers that should not be saved, or when the MCP serv
 The main wiki workflow uses these tool names:
 
 - `kb_write_note(note_path, title, type, tags, sources, body, created, updated, confidence?, contested?, if_hash?)` — write a note inside the configured vault from structured fields. `created` and `updated` must be UTC ISO datetimes with seconds and a trailing `Z` (`YYYY-MM-DDTHH:MM:SSZ`). The server renders YAML frontmatter, the top-level title heading, the body, and provenance. Existing notes require optimistic concurrency.
+- `kb_read_note(note_path)` — read a complete existing note as structured fields for safe full-replacement updates. It returns the rendered note's frontmatter fields, body without YAML/title/provenance, and the current `content_hash` to pass as `if_hash` to `kb_write_note`.
 - `kb_context(query, mode?, limit?, path_prefix?)` — build a wiki link context map for prompt, prewrite, or stop-hook use. It returns orientation pages, broken wiki links, existing link targets, suggested links, usage guidance, entity guidance, and `followup_search` queries. It intentionally omits score, snippets, and textual evidence.
 - `kb_search_notes(query, limit?, path_prefix?)` — low-level evidence search. It searches the Markdown LLM Wiki vault and returns ranked paths, titles, page types, tags, content hashes, and line snippets. Use it when `kb_context.followup_search` or your own question needs textual evidence.
 
@@ -55,8 +56,8 @@ queries/         # valuable answered questions worth preserving
 2. Orient before writing. Prefer `kb_context(mode="prompt"|"prewrite"|"stop")` to identify orientation pages, broken links, link targets, and suggested links. If the vault is directly readable through file tools, read `SCHEMA.md`, `index.md`, and the recent tail of `log.md` when those pages are relevant. If direct file reads are unavailable and textual evidence is needed, use `kb_search_notes` with the returned `followup_search` values.
 3. Search for existing pages before creating new ones. Avoid duplicate entity or concept pages.
 4. Decide the access mode:
-   - **File-readable mode:** safe to update existing notes because you can read the complete current file, preserve existing metadata/body intentionally, and pass the exact current `content_hash` as `if_hash`.
-   - **MCP-only mode:** `kb_context` returns link/navigation metadata, not evidence text. `kb_search_notes` returns snippets, not full note bodies or every frontmatter field. Do not overwrite an existing note from context metadata or snippets alone. Create new notes only, or ask the user for the full current note content before updating.
+   - **Full-read mode:** safe to update existing notes because direct file reads or `kb_read_note` provide the complete current structured note body and exact current `content_hash` for `if_hash`.
+   - **Snippet-only mode:** `kb_context` returns link/navigation metadata, not evidence text. `kb_search_notes` returns snippets, not full note bodies or every frontmatter field. Do not full-rewrite an existing note from context metadata or snippets alone. You may create a brand-new note when prewrite checks show no existing target or duplicate; pass no `if_hash`. To update an existing note, first call `kb_read_note`, patch the returned full body/fields, then call `kb_write_note` with `if_hash=read.content_hash`.
 
 ## Context and search boundary
 
@@ -70,6 +71,12 @@ Use `kb_context` as the default navigation tool when deciding what to connect, r
 - getting `content_hash` values for safe follow-up writes and `followup_search` values for evidence lookup.
 
 `kb_context` must not be used alone to justify a factual claim or overwrite an existing note. When you need the reason a link is valid, run `kb_search_notes` with `followup_search`, or read the full note if the filesystem is available.
+
+Use `kb_read_note` when:
+
+- you need to update `index.md`, `log.md`, or any existing synthesized page;
+- you need the complete current body/frontmatter rather than snippets;
+- you will call `kb_write_note` for an existing path. Patch the full returned body/fields and pass the returned `content_hash` as `if_hash`.
 
 Use `kb_search_notes` when:
 
@@ -283,9 +290,10 @@ Do not hand-author that trailer in the `body` argument unless you are intentiona
 ## Write policy
 
 - `kb_write_note` writes structured note fields. Do not pass a complete Markdown file. Pass `body` without YAML frontmatter, without the provenance trailer, and without a top-level `# Title` heading; the tool renders those parts.
-- For updates, preserve intended existing fields/body, pass the current full-file `content_hash` as `if_hash`, and send the complete replacement field set.
+- For updates, first read the complete current structured note with `kb_read_note` or direct filesystem access. Preserve intended existing fields/body, patch the full returned `body`, pass the current full-file `content_hash` as `if_hash`, and send the complete replacement field set.
+- For brand-new notes, first use `kb_context(mode="prewrite")` and any needed `kb_search_notes` duplicate checks. If no existing note or equivalent alias is found, create the note without `if_hash`; this is allowed even in MCP-only mode.
 - Keep raw sources under `raw/` immutable. Corrections and synthesis belong in wiki pages such as `entities/`, `concepts/`, `comparisons/`, or `queries/`.
-- Every meaningful write should update `index.md` and append a concise entry to `log.md` unless the user explicitly requests a draft-only note.
+- Every meaningful write should update `index.md` and append a concise entry to `log.md` unless the user explicitly requests a draft-only note. Update those existing files through the same read-full-body, patch-body, `kb_write_note(if_hash=...)` flow; never reconstruct them from snippets.
 - Use lowercase kebab-case note paths such as `concepts/llm-wiki.md` and `entities/anthropic.md`.
 - Prefer `[[wikilinks]]` between wiki pages. New synthesized pages should have at least two useful outbound links when possible.
 - Preserve YAML frontmatter fields by resubmitting structured arguments: `title`, `created`, `updated`, `type`, `tags`, and `sources`.
@@ -298,8 +306,8 @@ Do not hand-author that trailer in the `body` argument unless you are intentiona
 4. Call `kb_context(mode="prewrite")` before writing. Repair relevant broken links, reuse existing link targets, and inspect suggested links before creating pages.
 5. Use `kb_search_notes` with `followup_search` when you need evidence for a proposed link, duplicate-page check, alias check, or entity creation decision.
 6. Create or update only the pages that meet the entity/page thresholds above or the vault `SCHEMA.md` thresholds.
-7. Update navigation (`index.md`) and audit trail (`log.md`).
-8. Report the exact note paths written and the returned hashes.
+7. Update navigation (`index.md`) and audit trail (`log.md`) by calling `kb_read_note`, patching the returned full body, and writing with `if_hash=read.content_hash`.
+8. If `kb_write_note` reports a stale hash, stop, re-read the note, and re-apply the intended patch only after verifying the concurrent change. Report the exact note paths written and returned hashes.
 
 ## Exploration flow
 
@@ -440,7 +448,7 @@ Claude Code supports project/user hook events such as `UserPromptSubmit` and `St
 
 `llm-wiki-context-hook.sh` should read the incoming prompt metadata from stdin when the agent provides it, query `kb_context` for orientation pages, broken links, link targets, and suggested links, then print a compact context block to stdout. Keep it short enough that it helps rather than flooding the prompt. If `kb_context` is unavailable, fall back to `kb_search_notes`.
 
-`llm-wiki-stop-hook.sh` should read the session/transcript metadata available to the hook, decide what durable knowledge changed, then use `kb_context`, `kb_search_notes` when evidence is needed, and `kb_write_note` to update pages, `index.md`, and `log.md` with optimistic concurrency. When selected during setup, the Claude/Codex stop hook emits a one-time `decision=block` response so the agent performs that update pass before its final stop; it must not block again when `stop_hook_active=true`.
+`llm-wiki-stop-hook.sh` should read the session/transcript metadata available to the hook, decide what durable knowledge changed, then use `kb_context`, `kb_search_notes` when evidence is needed, `kb_read_note` for existing pages, and `kb_write_note(if_hash=...)` to update pages, `index.md`, and `log.md` with optimistic concurrency. When selected during setup, the Claude/Codex stop hook emits a one-time `decision=block` response so the agent performs that update pass before its final stop; it must not block again when `stop_hook_active=true`.
 
 The two architectures for stop-time updates — **in-loop** (re-prompt the same session via `decision=block`) versus **out-of-loop** (a stop hook spawns a separate headless writer such as `claude -p` / `codex exec`) — and their trade-offs are compared in the vault concept page `[[concepts/agent-stop-hook-self-update]]`. When selected during setup, this skill installs the in-loop variant for Claude Code and Codex; see the headless fallback note below for unattended setups.
 
@@ -471,14 +479,14 @@ Setup installs this skill, configures the `llm_wiki` MCP server, and writes reus
 
 ### Headless fallback (any client, unattended)
 
-When you must guarantee the update runs unattended, a stop/finalize hook can spawn a separate headless writer (`claude -p` or `codex exec`) instead of re-prompting in-loop. Three things are mandatory, or it silently no-ops: (1) the headless agent has no memory of the turn, so feed it the hook payload's `transcript_path`; (2) `claude -p --bare` skips the project MCP config and OAuth, so pass `--mcp-config` for `llm-wiki` plus a credential (`ANTHROPIC_API_KEY`/`apiKeyHelper`) or it will not have `kb_write_note`; (3) fully detach the process (`setsid`/`nohup`), since background tasks started during a `-p` run are killed shortly after it returns. See `[[concepts/agent-stop-hook-self-update]]` for the full comparison.
+When you must guarantee the update runs unattended, a stop/finalize hook can spawn a separate headless writer (`claude -p` or `codex exec`) instead of re-prompting in-loop. Three things are mandatory, or it silently no-ops: (1) the headless agent has no memory of the turn, so feed it the hook payload's `transcript_path`; (2) `claude -p --bare` skips the project MCP config and OAuth, so pass `--mcp-config` for `llm-wiki` plus a credential (`ANTHROPIC_API_KEY`/`apiKeyHelper`) or it will not have `kb_read_note`/`kb_write_note`; (3) fully detach the process (`setsid`/`nohup`), since background tasks started during a `-p` run are killed shortly after it returns. See `[[concepts/agent-stop-hook-self-update]]` for the full comparison.
 
 ## Safety rules
 
 - Do not invent existing vault contents. If you cannot read a page, say so and ask for it or create a clearly named draft note instead of overwriting.
 - Do not hard-delete notes through this workflow.
 - Do not treat `kb_context` as evidence text. It is a link/navigation map; run `kb_search_notes` or read full files before making factual claims or replacing existing note bodies.
-- Do not overwrite existing notes in MCP-only mode from snippets alone.
+- Do not full-rewrite existing notes from `kb_context` metadata or `kb_search_notes` snippets alone. Existing-note rewrites are allowed after `kb_read_note` or direct file reads provide the full current body and `content_hash`; stale hash failures require a fresh read before retry.
 - Do not call `kb_push_vault` from this skill. Use `$llm-wiki-push` for explicit vault GitHub push requests.
 - Treat the MCP endpoint as local by default: `http://127.0.0.1:9999/mcp`.
 - If the server later enables bearer auth, add the authorization header in the agent MCP config before using write tools.
@@ -491,6 +499,7 @@ When you must guarantee the update runs unattended, a stop/finalize hook can spa
 Hermes prefixes native MCP tools as `mcp_<server>_<tool>`. With the default `llm_wiki` server name, look for:
 
 - `mcp_llm_wiki_kb_write_note`
+- `mcp_llm_wiki_kb_read_note`
 - `mcp_llm_wiki_kb_context`
 - `mcp_llm_wiki_kb_search_notes`
 
@@ -498,7 +507,7 @@ If these tools do not appear, run `hermes mcp list`, `hermes mcp test llm_wiki`,
 
 ### Claude Code
 
-Claude Code usually displays MCP tools with a server namespace such as `mcp__llm-wiki__kb_write_note`. With the default setup, look for the `llm-wiki` MCP server in `/mcp` or `claude mcp list`.
+Claude Code usually displays MCP tools with a server namespace such as `mcp__llm-wiki__kb_read_note` and `mcp__llm-wiki__kb_write_note`. With the default setup, look for the `llm-wiki` MCP server in `/mcp` or `claude mcp list`.
 
 If project-scoped `.mcp.json` is used, Claude may ask you to approve the server the first time it sees the project. Approve only after confirming the endpoint is the expected local URL.
 

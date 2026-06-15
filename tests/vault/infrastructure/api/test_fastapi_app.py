@@ -71,17 +71,22 @@ def test_fastapi_app은_tools_endpoint에서_mcp_tool_schema를_문서화한다(
     with TestClient(app, base_url="http://127.0.0.1:9999") as client:
         response = client.get("/tools")
 
-    # Then: write/search MCP tool 목록과 명확한 설명이 REST 문서용 JSON으로 반환된다.
+    # Then: read/write/search MCP tool 목록과 명확한 설명이 REST 문서용 JSON으로 반환된다.
     assert response.status_code == 200
     tools = response.json()
+    read_note = next(tool for tool in tools if tool["name"] == "kb_read_note")
     write_note = next(tool for tool in tools if tool["name"] == "kb_write_note")
     search_notes = next(tool for tool in tools if tool["name"] == "kb_search_notes")
     context = next(tool for tool in tools if tool["name"] == "kb_context")
     push_vault = next(tool for tool in tools if tool["name"] == "kb_push_vault")
+    assert "Read a complete existing Markdown wiki note" in read_note["description"]
     assert "structured fields" in write_note["description"]
     assert "Search Markdown notes" in search_notes["description"]
     assert "wiki link context map" in context["description"]
     assert "push origin to the current branch" in push_vault["description"]
+    assert read_note["inputSchema"]["required"] == ["note_path"]
+    assert read_note["inputSchema"]["properties"]["note_path"]["type"] == "string"
+    assert read_note["outputSchema"]["type"] == "object"
     assert write_note["inputSchema"]["type"] == "object"
     assert set(write_note["inputSchema"]["required"]) == {
         "note_path",
@@ -130,6 +135,7 @@ def test_fastapi_app은_tools_endpoint에서_mcp_tool_schema를_문서화한다(
     assert push_vault["inputSchema"]["properties"] == {}
     assert push_vault["outputSchema"]["type"] == "object"
     assert {tool["name"] for tool in tools} == {
+        "kb_read_note",
         "kb_write_note",
         "kb_search_notes",
         "kb_context",

@@ -17,6 +17,7 @@ MCP server for a Git-backed Obsidian/Markdown LLM Wiki vault.
 - Provenance trailer on written notes
 - REST `GET /metrics` endpoint combining vault and graph counters
 - LLM Wiki Markdown search through the `kb_search_notes` MCP tool
+- Safe full-note update flow through `kb_read_note` + `kb_write_note(if_hash=...)`
 - Manual vault commit/push through the `kb_push_vault` MCP tool
 - Optional background vault push every random 30-60 minutes when `KB_GITHUB_PUSH_ENABLED=true`
 
@@ -63,7 +64,7 @@ For Obsidian, no separate connector is needed — just **Open folder as vault** 
 uv run llm-wiki
 ```
 
-The default endpoint is `http://127.0.0.1:9999/mcp`. Once the server is up you can check its status with `GET /health`, and the MCP tools expose `kb_search_notes`, `kb_write_note`, and `kb_push_vault`. Vault/graph counters are available through the REST `GET /metrics` endpoint.
+The default endpoint is `http://127.0.0.1:9999/mcp`. Once the server is up you can check its status with `GET /health`, and the MCP tools expose `kb_read_note`, `kb_search_notes`, `kb_write_note`, and `kb_push_vault`. Vault/graph counters are available through the REST `GET /metrics` endpoint.
 
 ### Push the vault to GitHub
 
@@ -108,16 +109,16 @@ The context hook calls `kb_search_notes` at user-input time and prepends relevan
 The skill instructs the agent to:
 
 - Search existing Markdown wiki pages with `kb_search_notes` before writing
-- Orient on `SCHEMA.md`, `index.md`, and `log.md` via direct file access or `kb_search_notes` snippets
+- Orient on `SCHEMA.md`, `index.md`, and `log.md` via direct file access, `kb_read_note`, or `kb_search_notes` snippets
 - Initialize a new vault from the skill's built-in schema, page-type, index, log, and provenance guidance when it does not have `SCHEMA.md` yet
-- Treat `kb_search_notes` as snippet search rather than full file reads, so in MCP-only mode it does not update an existing note without the complete current note body
+- Treat `kb_search_notes` as snippet search rather than full file reads. Existing-note updates use `kb_read_note` to retrieve the full structured body and `content_hash`, then `kb_write_note` with that hash as `if_hash`
 - Write complete Markdown notes through `kb_write_note`
 - Use `$llm-wiki-push` for explicit GitHub vault sync requests. The main `llm-wiki` skill must not call `kb_push_vault`
 - Use the returned `content_hash` as the next `if_hash` for optimistic concurrency
 - Keep raw sources immutable and update `index.md` and `log.md` for durable wiki changes
 - Use the installed hook commands together with native hooks, plugins, or wrappers: load compact wiki context at user-input time and, when selected during setup, run a stop-time update pass when the agent finishes. Claude Code and Codex share the same `UserPromptSubmit`/`Stop` hook schema (in-loop `decision=block` re-prompt), so setup can wire them when selected. Hermes/Hermess exposes only finalize-style session hooks, so it gets reusable scripts to wire into a plugin/wrapper or finalize hook for an out-of-loop update pass.
 
-The MCP tools the server currently exposes are `kb_write_note`, `kb_search_notes`, and `kb_push_vault`. Vault/graph counters are provided through the REST `GET /metrics` endpoint.
+The MCP tools the server currently exposes are `kb_read_note`, `kb_write_note`, `kb_search_notes`, and `kb_push_vault`. Vault/graph counters are provided through the REST `GET /metrics` endpoint.
 
 ## Vault Structure
 
@@ -159,7 +160,7 @@ Every synthesized page follows these rules:
 - **Links:** `[[wikilinks]]` between pages; new pages should have at least two useful outbound links when possible.
 - **Thresholds:** create a page only when an entity/concept appears in 2+ sources or is central to one important source; split pages over ~200 lines.
 
-The write skill automatically appends a provenance trailer (`<!-- kb-provenance: ... -->`) after the body, and updates `index.md` (navigation) and `log.md` (audit trail) on every meaningful write. Sources under `raw/` stay immutable; corrections and synthesis go into the wiki pages.
+The write skill automatically appends a provenance trailer (`<!-- kb-provenance: ... -->`) after the body, and updates `index.md` (navigation) and `log.md` (audit trail) on every meaningful write when it can safely read their complete current contents. Sources under `raw/` stay immutable; corrections and synthesis go into the wiki pages.
 
 ### How the AI explores it
 
@@ -172,4 +173,4 @@ The AI treats the vault as a graph, not just a text-search index.
 5. Prefer pages with higher confidence, newer dates, and multiple sources; surface low-confidence or contested pages explicitly.
 6. When an answer becomes a reusable synthesis, file it as a `queries/` or `comparisons/` page and update `index.md` and `log.md`.
 
-Because `kb_search_notes` returns snippets rather than whole files, in MCP-only mode the AI does not overwrite an existing note without the complete current note body.
+Because `kb_search_notes` returns snippets rather than whole files, existing-note updates use `kb_read_note` first, patch the complete returned body, and then call `kb_write_note` with `if_hash=content_hash`. Snippet-only replacement remains forbidden.

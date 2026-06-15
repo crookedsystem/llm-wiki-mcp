@@ -43,6 +43,7 @@ def create_fastapi_app(settings: Settings) -> FastAPI:
     runtime = get_runtime(settings)
     mcp_server = create_mcp_server(
         settings,
+        read_service=runtime.read_service,
         write_service=runtime.write_service,
         search_service=runtime.search_service,
         context_service=runtime.context_service,
