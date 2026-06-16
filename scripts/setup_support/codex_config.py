@@ -80,19 +80,39 @@ def _mcp_servers(parsed: dict[str, Any]) -> dict[str, dict[str, Any]]:
 def _replace_codex_server_url(content: str, server_name: str, server_url: str) -> str:
     table_key = _toml_table_key(server_name)
     table_pattern = re.compile(
-        rf"(?ms)^(\[mcp_servers\.{re.escape(table_key)}\]\n)(.*?)(?=^\[|\Z)"
+        rf"(?ms)^(\[mcp_servers\.{re.escape(table_key)}\][^\n]*\n)(.*?)(?=^\[|\Z)"
     )
     match = table_pattern.search(content)
+    url_line = f"url = {json.dumps(server_url)}"
     if match is None:
-        return f"{content.rstrip()}\n\n{_codex_server_block(server_name, server_url)}"
+        inline_update = _replace_inline_codex_server_url(content, table_key, server_url)
+        if inline_update is not None:
+            return inline_update
+        raise ValueError(f"Cannot update existing Codex MCP server '{server_name}' in config.")
 
     header, body = match.group(1), match.group(2)
-    url_line = f"url = {json.dumps(server_url)}"
     if re.search(r"(?m)^url\s*=", body):
         updated_body = re.sub(r"(?m)^url\s*=.*$", url_line, body, count=1)
     else:
         updated_body = f"{url_line}\n{body}"
-    return f"{content[:match.start()]}{header}{updated_body}{content[match.end():]}"
+    return f"{content[: match.start()]}{header}{updated_body}{content[match.end() :]}"
+
+
+def _replace_inline_codex_server_url(content: str, table_key: str, server_url: str) -> str | None:
+    server_key = re.escape(table_key)
+    quoted_url = json.dumps(server_url)
+    patterns = [
+        re.compile(rf"(?m)^(\s*{server_key}\s*=\s*\{{[^\n}}]*\burl\s*=\s*)(\"[^\"]*\"|'[^']*')"),
+        re.compile(
+            rf"(?m)^(\s*mcp_servers\s*=\s*\{{[^\n}}]*\b{server_key}\s*=\s*\{{[^\n}}]*\burl\s*=\s*)"
+            rf"(\"[^\"]*\"|'[^']*')"
+        ),
+    ]
+    for pattern in patterns:
+        updated, count = pattern.subn(rf"\g<1>{quoted_url}", content, count=1)
+        if count:
+            return updated
+    return None
 
 
 def _codex_server_block(server_name: str, server_url: str) -> str:

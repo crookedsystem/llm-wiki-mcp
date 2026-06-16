@@ -311,7 +311,7 @@ def test_install_claude는_기존_mcp_server를_삭제하고_다시_추가한다
         ) -> object:
             calls.append(args)
             if args == ["claude", "mcp", "get", "llm-wiki"]:
-                return _CommandResult(0, "url: http://old.example/mcp", "")
+                return _CommandResult(0, "url: http://old.example/mcp\nScope: project", "")
             return _CommandResult(0, "", "")
 
     monkeypatch.setattr(installers, "CommandRunner", FakeRunner)
@@ -319,7 +319,7 @@ def test_install_claude는_기존_mcp_server를_삭제하고_다시_추가한다
     result = installers.install_claude(config)
 
     assert result == 0
-    assert ["claude", "mcp", "remove", "-s", "user", "llm-wiki"] in calls
+    assert ["claude", "mcp", "remove", "-s", "project", "llm-wiki"] in calls
     assert [
         "claude",
         "mcp",
@@ -720,6 +720,49 @@ def test_codex_config는_기존_server_name의_url을_덮어쓴다(tmp_path: Pat
     assert 'url = "http://new.example/mcp"' in content
     assert "http://old.example/mcp" not in content
     assert "tool_timeout_sec = 120" in content
+
+
+def test_codex_config는_주석이_있는_기존_server_header의_url을_덮어쓴다(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        '[mcp_servers.llm_wiki] # local wiki\nurl = "http://old.example/mcp"\n',
+        encoding="utf-8",
+    )
+
+    result = add_codex_mcp_server(
+        config_path,
+        "llm_wiki",
+        "http://new.example/mcp",
+        dry_run=False,
+    )
+
+    content = config_path.read_text(encoding="utf-8")
+    assert result.changed is True
+    assert "[mcp_servers.llm_wiki] # local wiki" in content
+    assert 'url = "http://new.example/mcp"' in content
+    assert content.count("[mcp_servers.llm_wiki]") == 1
+
+
+def test_codex_config는_inline_server_table의_url을_덮어쓴다(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        '[mcp_servers]\nllm_wiki = { url = "http://old.example/mcp", tool_timeout_sec = 120 }\n',
+        encoding="utf-8",
+    )
+
+    result = add_codex_mcp_server(
+        config_path,
+        "llm_wiki",
+        "http://new.example/mcp",
+        dry_run=False,
+    )
+
+    content = config_path.read_text(encoding="utf-8")
+    assert result.changed is True
+    assert 'llm_wiki = { url = "http://new.example/mcp", tool_timeout_sec = 120 }' in content
+    assert "[mcp_servers.llm_wiki]" not in content
 
 
 def test_codex_config는_같은_url이_다른_name에_있어도_요청한_server를_추가한다(

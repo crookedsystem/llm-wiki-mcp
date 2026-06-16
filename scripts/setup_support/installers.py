@@ -60,7 +60,19 @@ def install_claude(config: ResolvedConfig) -> int:
         ["claude", "mcp", "get", config.server_name], check=False, capture=True
     )
     if not config.dry_run and existing_by_name.returncode == 0:
-        runner.run(["claude", "mcp", "remove", "-s", config.claude_scope, config.server_name])
+        existing_scope = _claude_mcp_scope_from_output(
+            f"{existing_by_name.stdout}\n{existing_by_name.stderr}"
+        )
+        runner.run(
+            [
+                "claude",
+                "mcp",
+                "remove",
+                "-s",
+                existing_scope or config.claude_scope,
+                config.server_name,
+            ]
+        )
 
     runner.run(
         [
@@ -112,3 +124,8 @@ def _has_server_name(output: str, server_name: str) -> bool:
 
 def _contains_token(output: str, token: str) -> bool:
     return re.search(rf"(^|[^A-Za-z0-9_-]){re.escape(token)}([^A-Za-z0-9_-]|$)", output) is not None
+
+
+def _claude_mcp_scope_from_output(output: str) -> str | None:
+    match = re.search(r"(?im)^\s*scope\s*:\s*(local|project|user)\b", output)
+    return match.group(1).lower() if match else None
