@@ -158,7 +158,7 @@ contested: false
 ---
 ```
 
-`title`, `created`, `updated`, `type`, `tags`, `sources`, and `body` are required tool arguments. `created` and `updated` must be UTC ISO datetimes with seconds and a trailing `Z`, such as `2026-06-09T14:30:05Z`; date-only, non-UTC, offset, and sub-second values are invalid. `confidence` and `contested` are optional but useful. Use `confidence: low` for single-source, speculative, or fast-moving claims. Use `contested: true` when sources conflict and explain the conflict in the body.
+`title`, `created`, `updated`, `type`, `tags`, `sources`, and `body` are required tool arguments. `created` and `updated` must be UTC ISO datetimes with seconds and a trailing `Z`, such as `2026-06-09T14:30:05Z`; date-only, non-UTC, offset, and sub-second values are invalid. When updating an existing note, `updated` must change to the current UTC timestamp; do not preserve the old update timestamp after modifying content, links, metadata, index entries, or log entries. `confidence` and `contested` are optional but useful. Use `confidence: low` for single-source, speculative, or fast-moving claims. Use `contested: true` when sources conflict and explain the conflict in the body.
 
 Path and type must agree:
 
@@ -171,7 +171,7 @@ Path and type must agree:
 
 ### Page body pattern
 
-Keep pages scannable. The tool renders `# Page Title`; pass only the section body. Prefer this shape unless the vault `SCHEMA.md` says otherwise:
+Keep pages scannable. The tool renders `# Page Title`; pass only the section body. Put the page title only in the structured `title` field, never again as a body `#` / H1 heading, or the rendered note will show the title twice. Prefer this shape unless the vault `SCHEMA.md` says otherwise:
 
 ```markdown
 ## Summary
@@ -290,8 +290,8 @@ Do not hand-author that trailer in the `body` argument unless you are intentiona
 
 ## Write policy
 
-- `kb_write_note` writes structured note fields. Do not pass a complete Markdown file. Pass `body` without YAML frontmatter, without the provenance trailer, and without a top-level `# Title` heading; the tool renders those parts.
-- For updates, first read the complete current structured note with `kb_read_note` or direct filesystem access. Preserve intended existing fields/body, patch the full returned `body`, pass the current full-file `content_hash` as `if_hash`, and send the complete replacement field set.
+- `kb_write_note` writes structured note fields. Do not pass a complete Markdown file. Pass `body` without YAML frontmatter, without the provenance trailer, and without a top-level `# Title` heading; write the title only in the structured `title` field because the tool renders the H1 heading.
+- For updates, first read the complete current structured note with `kb_read_note` or direct filesystem access. Preserve intended existing fields/body, patch the full returned `body`, change `updated` to the current UTC timestamp, pass the current full-file `content_hash` as `if_hash`, and send the complete replacement field set.
 - For brand-new notes, first use `kb_context(mode="prewrite")` and any needed `kb_search_notes` duplicate checks. If no existing note or equivalent alias is found, create the note without `if_hash`; this is allowed even in MCP-only mode.
 - Keep raw sources under `raw/` immutable. Corrections and synthesis belong in wiki pages such as `entities/`, `concepts/`, `comparisons/`, or `queries/`.
 - Every meaningful write should update `index.md` and append a concise entry to `log.md` unless the user explicitly requests a draft-only note. Update those existing files through the same read-full-body, patch-body, `kb_write_note(if_hash=...)` flow; never reconstruct them from snippets.
