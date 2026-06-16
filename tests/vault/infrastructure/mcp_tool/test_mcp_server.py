@@ -58,6 +58,25 @@ class PushToolResult(TypedDict):
     push_command: str
 
 
+class RelatedCandidateToolResult(TypedDict):
+    path: str
+    relationships: list[str]
+    evidence: list[str]
+
+
+class DeleteToolResult(TypedDict):
+    dry_run: bool
+    deleted: bool
+    target_path: str
+    reference_cleanup_paths: list[str]
+    deleted_paths: list[str]
+    updated_paths: list[str]
+    content_hashes: dict[str, str]
+    related_candidates: list[RelatedCandidateToolResult]
+    confirmation_phrase: str
+    safety_notice: str
+
+
 def test_mcp_server는_기본_http_설정을_사용한다(tmp_path: Path) -> None:
     # Given: 기본 Settings로 MCP server를 생성한다.
     app_settings = Settings(host="127.0.0.1", vault_path=tmp_path / "vault")
@@ -69,6 +88,7 @@ def test_mcp_server는_기본_http_설정을_사용한다(tmp_path: Path) -> Non
         runtime.search_service,
         runtime.context_service,
         runtime.git_push_service,
+        runtime.delete_service,
     )
 
     # When: FastMCP HTTP 설정을 조회한다.
@@ -95,6 +115,7 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
             runtime.search_service,
             runtime.context_service,
             runtime.git_push_service,
+            runtime.delete_service,
         )
 
         # When: 등록된 tool 목록을 조회하고 write/search tool을 호출한다.
@@ -130,6 +151,7 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
         assert set(tool_by_name) == {
             "kb_read_note",
             "kb_write_note",
+            "kb_delete_note",
             "kb_search_notes",
             "kb_context",
             "kb_push_vault",
@@ -138,6 +160,9 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
             tool_by_name["kb_read_note"].description or ""
         )
         assert "structured fields" in (tool_by_name["kb_write_note"].description or "")
+        assert "Actual deletion requires dry_run=false" in (
+            tool_by_name["kb_delete_note"].description or ""
+        )
         assert "Search Markdown notes" in (tool_by_name["kb_search_notes"].description or "")
         assert "wiki link context map" in (tool_by_name["kb_context"].description or "")
         assert "push origin to the current branch" in (
@@ -170,6 +195,200 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
     asyncio.run(exercise_server())
 
 
+def test_mcp_delete_tool은_dry_run에서_참조_정리_후보와_confirmation을_반환한다(
+    tmp_path: Path,
+) -> None:
+    async def exercise_server() -> None:
+        # Given: target note와 서로 wikilink로 연결된 note들이 있다.
+        vault_root = tmp_path / "vault"
+        (vault_root / "concepts").mkdir(parents=True)
+        (vault_root / "queries").mkdir()
+        (vault_root / "concepts" / "agent-memory.md").write_text(
+            "---\ntitle: Agent Memory\ntype: concept\ntags: [agent-memory]\n---\n\n"
+            "# Agent Memory\n\nSee [[queries/memory-review]].\n",
+            encoding="utf-8",
+        )
+        (vault_root / "queries" / "memory-review.md").write_text(
+            "---\ntitle: Memory Review\ntype: query\ntags: [agent-memory]\n---\n\n"
+            "# Memory Review\n\nBack to [[concepts/agent-memory]].\n",
+            encoding="utf-8",
+        )
+        settings = Settings(host="127.0.0.1", vault_path=vault_root)
+        runtime = create_runtime(settings)
+        server = create_mcp_server(
+            settings,
+            runtime.read_service,
+            runtime.write_service,
+            runtime.search_service,
+            runtime.context_service,
+            runtime.git_push_service,
+            runtime.delete_service,
+        )
+
+        # When: 삭제 tool을 기본 dry_run으로 호출한다.
+        _, delete_result = await server.call_tool(
+            "kb_delete_note",
+            {"note_path": "concepts/agent-memory.md"},
+        )
+        structured_delete_result = cast(DeleteToolResult, delete_result)
+
+        # Then: 파일은 삭제되지 않고, 관련 후보와 명시 confirmation 문구를 반환한다.
+        assert structured_delete_result["dry_run"] is True
+        assert structured_delete_result["deleted"] is False
+        assert structured_delete_result["target_path"] == "concepts/agent-memory.md"
+        assert structured_delete_result["deleted_paths"] == []
+        assert structured_delete_result["confirmation_phrase"].startswith(
+            "DELETE: concepts/agent-memory.md@"
+        )
+        assert "ask the user directly" in structured_delete_result["safety_notice"]
+        assert (vault_root / "concepts" / "agent-memory.md").exists()
+        candidate = structured_delete_result["related_candidates"][0]
+        assert candidate["path"] == "queries/memory-review.md"
+        assert candidate["relationships"] == ["backlink"]
+        assert any("[[concepts/agent-memory]]" in evidence for evidence in candidate["evidence"])
+
+    asyncio.run(exercise_server())
+
+
+def test_mcp_delete_tool은_confirmation이_정확할_때만_명시된_참조를_정리한다(
+    tmp_path: Path,
+) -> None:
+    async def exercise_server() -> None:
+        # Given: target note와 target을 참조하는 note가 있다.
+        vault_root = tmp_path / "vault"
+        (vault_root / "concepts").mkdir(parents=True)
+        (vault_root / "queries").mkdir()
+        target_path = vault_root / "concepts" / "agent-memory.md"
+        related_path = vault_root / "queries" / "memory-review.md"
+        target_path.write_text(
+            "# Agent Memory\n\nSee [[queries/memory-review]].\n",
+            encoding="utf-8",
+        )
+        related_path.write_text(
+            "# Memory Review\n\nBack to [[concepts/agent-memory|Agent Memory]].\n",
+            encoding="utf-8",
+        )
+        settings = Settings(host="127.0.0.1", vault_path=vault_root)
+        runtime = create_runtime(settings)
+        server = create_mcp_server(
+            settings,
+            runtime.read_service,
+            runtime.write_service,
+            runtime.search_service,
+            runtime.context_service,
+            runtime.git_push_service,
+            runtime.delete_service,
+        )
+
+        # When / Then: confirmation 없이 실제 삭제를 요청하면 차단된다.
+        with pytest.raises(ToolError, match="confirm must exactly match"):
+            await server.call_tool(
+                "kb_delete_note",
+                {
+                    "note_path": "concepts/agent-memory.md",
+                    "reference_cleanup_paths": ["queries/memory-review.md"],
+                    "dry_run": False,
+                },
+            )
+
+        # When: dry_run confirmation_phrase를 그대로 사용해 삭제와 참조 정리를 실행한다.
+        _, preview_result = await server.call_tool(
+            "kb_delete_note",
+            {
+                "note_path": "concepts/agent-memory.md",
+                "reference_cleanup_paths": ["queries/memory-review.md"],
+            },
+        )
+        confirmation_phrase = cast(DeleteToolResult, preview_result)["confirmation_phrase"]
+        structured_preview_result = cast(DeleteToolResult, preview_result)
+        assert confirmation_phrase == (
+            "DELETE: concepts/agent-memory.md@"
+            f"{structured_preview_result['content_hashes']['concepts/agent-memory.md']}"
+            "; CLEAN REFERENCES: queries/memory-review.md@"
+            f"{structured_preview_result['content_hashes']['queries/memory-review.md']}"
+        )
+        _, delete_result = await server.call_tool(
+            "kb_delete_note",
+            {
+                "note_path": "concepts/agent-memory.md",
+                "reference_cleanup_paths": ["queries/memory-review.md"],
+                "dry_run": False,
+                "confirm": confirmation_phrase,
+            },
+        )
+        structured_delete_result = cast(DeleteToolResult, delete_result)
+
+        # Then: target만 삭제되고 참조 note에서는 target wikilink만 제거된다.
+        assert structured_delete_result["deleted"] is True
+        assert structured_delete_result["deleted_paths"] == ["concepts/agent-memory.md"]
+        assert structured_delete_result["updated_paths"] == ["queries/memory-review.md"]
+        assert not target_path.exists()
+        assert related_path.exists()
+        assert related_path.read_text(encoding="utf-8") == (
+            "# Memory Review\n\nBack to Agent Memory.\n"
+        )
+
+    asyncio.run(exercise_server())
+
+
+def test_mcp_delete_tool은_dry_run_이후_내용이_바뀌면_기존_confirmation을_거부한다(
+    tmp_path: Path,
+) -> None:
+    async def exercise_server() -> None:
+        # Given: target note와 target을 참조하는 note가 있다.
+        vault_root = tmp_path / "vault"
+        (vault_root / "concepts").mkdir(parents=True)
+        (vault_root / "queries").mkdir()
+        target_path = vault_root / "concepts" / "agent-memory.md"
+        related_path = vault_root / "queries" / "memory-review.md"
+        target_path.write_text("# Agent Memory\n", encoding="utf-8")
+        related_path.write_text(
+            "# Memory Review\n\nBack to [[concepts/agent-memory]].\n",
+            encoding="utf-8",
+        )
+        settings = Settings(host="127.0.0.1", vault_path=vault_root)
+        runtime = create_runtime(settings)
+        server = create_mcp_server(
+            settings,
+            runtime.read_service,
+            runtime.write_service,
+            runtime.search_service,
+            runtime.context_service,
+            runtime.git_push_service,
+            runtime.delete_service,
+        )
+
+        # When: dry_run 이후 참조 정리 대상 note 내용이 바뀐다.
+        _, preview_result = await server.call_tool(
+            "kb_delete_note",
+            {
+                "note_path": "concepts/agent-memory.md",
+                "reference_cleanup_paths": ["queries/memory-review.md"],
+            },
+        )
+        confirmation_phrase = cast(DeleteToolResult, preview_result)["confirmation_phrase"]
+        related_path.write_text(
+            "# Memory Review\n\nUpdated [[concepts/agent-memory]].\n",
+            encoding="utf-8",
+        )
+
+        # Then: 이전 confirmation_phrase는 현재 content_hash와 맞지 않아 거부된다.
+        with pytest.raises(ToolError, match="confirm must exactly match"):
+            await server.call_tool(
+                "kb_delete_note",
+                {
+                    "note_path": "concepts/agent-memory.md",
+                    "reference_cleanup_paths": ["queries/memory-review.md"],
+                    "dry_run": False,
+                    "confirm": confirmation_phrase,
+                },
+            )
+        assert target_path.exists()
+        assert related_path.exists()
+
+    asyncio.run(exercise_server())
+
+
 def test_mcp_server는_write_timestamp의_초단위_UTC_Z_datetime을_검증한다(
     tmp_path: Path,
 ) -> None:
@@ -185,6 +404,7 @@ def test_mcp_server는_write_timestamp의_초단위_UTC_Z_datetime을_검증한�
             runtime.search_service,
             runtime.context_service,
             runtime.git_push_service,
+            runtime.delete_service,
         )
 
         # When / Then: date-only timestamp는 write tool validator에서 거부된다.
@@ -247,6 +467,7 @@ def test_mcp_push_tool은_vault_변경사항을_commit하고_push한다(
             runtime.search_service,
             runtime.context_service,
             runtime.git_push_service,
+            runtime.delete_service,
         )
 
         # When: kb_push_vault tool을 호출한다.
