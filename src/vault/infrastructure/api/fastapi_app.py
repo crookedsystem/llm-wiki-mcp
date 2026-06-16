@@ -48,6 +48,7 @@ def create_fastapi_app(settings: Settings) -> FastAPI:
         search_service=runtime.search_service,
         context_service=runtime.context_service,
         git_push_service=runtime.git_push_service,
+        delete_service=runtime.delete_service,
     )
     mcp_app = mcp_server.streamable_http_app()
     github_push_scheduler = GithubPushScheduler(push_service=runtime.git_push_service)

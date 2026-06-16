@@ -21,6 +21,7 @@ The main wiki workflow uses these tool names:
 
 - `kb_write_note(note_path, title, type, tags, sources, body, created, updated, confidence?, contested?, if_hash?)` — write a note inside the configured vault from structured fields. `created` and `updated` must be UTC ISO datetimes with seconds and a trailing `Z` (`YYYY-MM-DDTHH:MM:SSZ`). The server renders YAML frontmatter, the top-level title heading, the body, and provenance. Existing notes require optimistic concurrency.
 - `kb_read_note(note_path)` — read a complete existing note as structured fields for safe full-replacement updates. It returns the rendered note's frontmatter fields, body without YAML/title/provenance, and the current `content_hash` to pass as `if_hash` to `kb_write_note`.
+- `kb_delete_note(note_path, reference_cleanup_paths?, dry_run?, confirm?)` — preview or delete a note and optionally clean backlinks from explicitly listed referencing notes. Default `dry_run=true` returns reference-cleanup candidates, evidence, and an exact `confirmation_phrase`. Actual deletion requires `dry_run=false` and `confirm` exactly equal to that phrase. Referencing notes are not deleted; when approved paths are passed in `reference_cleanup_paths`, only wikilinks pointing at `note_path` are removed from those notes.
 - `kb_context(query, mode?, limit?, path_prefix?)` — build a wiki link context map for prompt, prewrite, or stop-hook use. It returns orientation pages, broken wiki links, existing link targets, suggested links, usage guidance, entity guidance, and `followup_search` queries. It intentionally omits score, snippets, and textual evidence.
 - `kb_search_notes(query, limit?, path_prefix?)` — low-level evidence search. It searches the Markdown LLM Wiki vault and returns ranked paths, titles, page types, tags, content hashes, and line snippets. Use it when `kb_context.followup_search` or your own question needs textual evidence.
 
@@ -298,6 +299,18 @@ Do not hand-author that trailer in the `body` argument unless you are intentiona
 - Prefer `[[wikilinks]]` between wiki pages. New synthesized pages should have at least two useful outbound links when possible.
 - Preserve YAML frontmatter fields by resubmitting structured arguments: `title`, `created`, `updated`, `type`, `tags`, and `sources`.
 
+## Delete policy
+
+Deletion is destructive and must be opt-in for every affected page.
+
+- Do not delete a note unless the user explicitly asks to delete it. General cleanup, archive, merge, dedupe, or "this looks obsolete" language is not enough.
+- Before deleting anything, call `kb_delete_note(note_path, dry_run=true)` and show the user the target path, related candidates, relationships, evidence, and exact pages that would be deleted.
+- If you believe references in other notes should also be cleaned, ask the user directly before changing those notes. Provide detailed evidence from `related_candidates` and, when needed, `kb_read_note` or `kb_search_notes`; do not infer approval from the graph alone.
+- Referencing pages are never deleted by `kb_delete_note`. Pass `reference_cleanup_paths` only for exact paths the user explicitly approved for reference cleanup.
+- Actual deletion requires a second call with `dry_run=false` and `confirm` exactly equal to the preview's `confirmation_phrase`.
+- Do not use delete tools from stop hooks, prompt hooks, automatic maintenance, or "durable memory" updates. Hooks may report deletion candidates, but deletion must wait for a direct user request.
+- After deletion, update `index.md` and append `log.md` through `kb_read_note` + `kb_write_note(if_hash=...)` if those files exist and the user asked for the vault graph to remain tidy. Do not silently delete or rewrite navigation pages as a side effect.
+
 ## LLM Wiki page flow
 
 1. Capture or identify the source material.
@@ -484,7 +497,8 @@ When you must guarantee the update runs unattended, a stop/finalize hook can spa
 ## Safety rules
 
 - Do not invent existing vault contents. If you cannot read a page, say so and ask for it or create a clearly named draft note instead of overwriting.
-- Do not hard-delete notes through this workflow.
+- Do not hard-delete notes through ordinary write/search/context workflows. Use `kb_delete_note` only after an explicit user deletion request, a dry-run evidence report, and exact confirmation.
+- Do not delete related pages just because they are linked, orphaned, stale, or appear redundant. Ask the user directly with detailed evidence before cleaning references, and use separate explicit deletion requests for any additional page deletion.
 - Do not treat `kb_context` as evidence text. It is a link/navigation map; run `kb_search_notes` or read full files before making factual claims or replacing existing note bodies.
 - Do not full-rewrite existing notes from `kb_context` metadata or `kb_search_notes` snippets alone. Existing-note rewrites are allowed after `kb_read_note` or direct file reads provide the full current body and `content_hash`; stale hash failures require a fresh read before retry.
 - Do not call `kb_push_vault` from this skill. Use `$llm-wiki-push` for explicit vault GitHub push requests.
@@ -499,6 +513,7 @@ When you must guarantee the update runs unattended, a stop/finalize hook can spa
 Hermes prefixes native MCP tools as `mcp_<server>_<tool>`. With the default `llm_wiki` server name, look for:
 
 - `mcp_llm_wiki_kb_write_note`
+- `mcp_llm_wiki_kb_delete_note`
 - `mcp_llm_wiki_kb_read_note`
 - `mcp_llm_wiki_kb_context`
 - `mcp_llm_wiki_kb_search_notes`
@@ -507,7 +522,7 @@ If these tools do not appear, run `hermes mcp list`, `hermes mcp test llm_wiki`,
 
 ### Claude Code
 
-Claude Code usually displays MCP tools with a server namespace such as `mcp__llm-wiki__kb_read_note` and `mcp__llm-wiki__kb_write_note`. With the default setup, look for the `llm-wiki` MCP server in `/mcp` or `claude mcp list`.
+Claude Code usually displays MCP tools with a server namespace such as `mcp__llm-wiki__kb_read_note`, `mcp__llm-wiki__kb_write_note`, and `mcp__llm-wiki__kb_delete_note`. With the default setup, look for the `llm-wiki` MCP server in `/mcp` or `claude mcp list`.
 
 If project-scoped `.mcp.json` is used, Claude may ask you to approve the server the first time it sees the project. Approve only after confirming the endpoint is the expected local URL.
 
