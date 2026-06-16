@@ -8,3 +8,4 @@ class WriteNoteResult(FrozenModel):
     source_hash: str
     content_hash: str
     commit_hash: str | None = None
+    attachment_paths: tuple[Path, ...] = ()

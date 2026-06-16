@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import subprocess
 from pathlib import Path
 from typing import TypedDict, cast
@@ -15,6 +16,7 @@ from vault.infrastructure.mcp_tool.mcp_server import create_mcp_server
 class WriteNoteToolResult(TypedDict):
     source_hash: str
     content_hash: str
+    attachment_paths: list[str]
 
 
 class ReadNoteToolResult(TypedDict):
@@ -133,6 +135,13 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
                 "updated": "2026-06-12T10:31:46Z",
                 "confidence": "medium",
                 "contested": False,
+                "attachments": [
+                    {
+                        "path": "raw/assets/memory.png",
+                        "mime_type": "image/png",
+                        "data_base64": base64.b64encode(b"image bytes").decode("ascii"),
+                    }
+                ],
             },
         )
         structured_write_result = cast(WriteNoteToolResult, write_result)
@@ -169,12 +178,19 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
             tool_by_name["kb_push_vault"].description or ""
         )
         assert structured_write_result["source_hash"]
+        assert structured_write_result["attachment_paths"] == [
+            (vault_root / "raw" / "assets" / "memory.png").resolve().as_posix()
+        ]
+        assert (vault_root / "raw" / "assets" / "memory.png").read_bytes() == b"image bytes"
         assert structured_read_result["path"] == "concepts/agent-memory.md"
         assert structured_read_result["title"] == "Agent Memory"
         assert structured_read_result["type"] == "concept"
         assert structured_read_result["tags"] == ["agent-memory"]
         assert structured_read_result["sources"] == ["raw/articles/source.md"]
-        assert structured_read_result["body"] == "## Summary\nAgent memory keeps durable context."
+        assert structured_read_result["body"] == (
+            "## Summary\nAgent memory keeps durable context.\n\n"
+            "## Attachments\n![memory.png](raw/assets/memory.png)"
+        )
         assert structured_read_result["created"] == "2026-06-12T09:30:45Z"
         assert structured_read_result["updated"] == "2026-06-12T10:31:46Z"
         assert structured_read_result["confidence"] == "medium"

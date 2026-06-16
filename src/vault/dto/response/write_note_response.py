@@ -8,6 +8,7 @@ class WriteNoteResponse(TypedDict):
     source_hash: str
     content_hash: str
     commit_hash: str | None
+    attachment_paths: list[str]
 
 
 def write_note_response(result: WriteNoteResult) -> WriteNoteResponse:
@@ -16,4 +17,5 @@ def write_note_response(result: WriteNoteResult) -> WriteNoteResponse:
         "source_hash": result.source_hash,
         "content_hash": result.content_hash,
         "commit_hash": result.commit_hash,
+        "attachment_paths": [path.as_posix() for path in result.attachment_paths],
     }
