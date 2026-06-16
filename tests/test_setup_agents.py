@@ -1,10 +1,11 @@
 import io
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from pytest import CaptureFixture, MonkeyPatch, raises
-from setup_support import cli
+from setup_support import cli, installers
 from setup_support.codex_config import add_codex_mcp_server
 from setup_support.config import (
     ResolvedConfig,
@@ -24,6 +25,25 @@ from setup_support.installers import install_codex
 class _TtyInput(io.StringIO):
     def isatty(self) -> bool:
         return True
+
+
+@dataclass(frozen=True)
+class _CommandResult:
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _repo_with_skills(tmp_path: Path) -> Path:
+    repo_root = tmp_path / "repo"
+    for skill_name in ("llm-wiki", "llm-wiki-push"):
+        skill_dir = repo_root / "skills" / skill_name
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            f"---\nname: {skill_name}\ndescription: test\n---\n",
+            encoding="utf-8",
+        )
+    return repo_root
 
 
 def test_load_env는_dotenv를_읽고_process_env가_우선한다(tmp_path: Path) -> None:
@@ -256,6 +276,106 @@ def test_install_codex는_llm_wiki와_push_skill을_함께_설치한다(tmp_path
     assert result == 0
     assert (tmp_path / "codex" / "skills" / "llm-wiki" / "SKILL.md").exists()
     assert (tmp_path / "codex" / "skills" / "llm-wiki-push" / "SKILL.md").exists()
+
+
+def test_install_claude는_기존_mcp_server를_삭제하고_다시_추가한다(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repo_root = _repo_with_skills(tmp_path)
+    env_file = tmp_path / ".env"
+    env_file.write_text(f"CLAUDE_SKILLS_DIR={tmp_path / 'claude-skills'}\n", encoding="utf-8")
+    config = resolve_config(
+        agent="claude",
+        repo_root=repo_root,
+        env_file=env_file,
+        process_env={},
+        server_url="http://new.example/mcp",
+        install_hooks=False,
+    )
+    calls: list[list[str]] = []
+
+    class FakeRunner:
+        def __init__(self, *, dry_run: bool) -> None:
+            self.dry_run = dry_run
+
+        def command_exists(self, command: str) -> bool:
+            return command == "claude"
+
+        def run(
+            self,
+            args: list[str],
+            *,
+            check: bool = True,
+            capture: bool = False,
+        ) -> object:
+            calls.append(args)
+            if args == ["claude", "mcp", "get", "llm-wiki"]:
+                return _CommandResult(0, "url: http://old.example/mcp", "")
+            return _CommandResult(0, "", "")
+
+    monkeypatch.setattr(installers, "CommandRunner", FakeRunner)
+
+    result = installers.install_claude(config)
+
+    assert result == 0
+    assert ["claude", "mcp", "remove", "-s", "user", "llm-wiki"] in calls
+    assert [
+        "claude",
+        "mcp",
+        "add",
+        "-s",
+        "user",
+        "--transport",
+        "http",
+        "llm-wiki",
+        "http://new.example/mcp",
+    ] in calls
+
+
+def test_install_hermes는_기존_mcp_server를_삭제하고_다시_추가한다(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repo_root = _repo_with_skills(tmp_path)
+    env_file = tmp_path / ".env"
+    env_file.write_text(f"HERMES_HOME={tmp_path / 'hermes'}\n", encoding="utf-8")
+    config = resolve_config(
+        agent="hermes",
+        repo_root=repo_root,
+        env_file=env_file,
+        process_env={},
+        server_url="http://new.example/mcp",
+        install_hooks=False,
+    )
+    calls: list[list[str]] = []
+
+    class FakeRunner:
+        def __init__(self, *, dry_run: bool) -> None:
+            self.dry_run = dry_run
+
+        def command_exists(self, command: str) -> bool:
+            return command == "hermes"
+
+        def run(
+            self,
+            args: list[str],
+            *,
+            check: bool = True,
+            capture: bool = False,
+        ) -> object:
+            calls.append(args)
+            if args == ["hermes", "mcp", "list"]:
+                return _CommandResult(0, "llm_wiki http://old.example/mcp", "")
+            return _CommandResult(0, "", "")
+
+    monkeypatch.setattr(installers, "CommandRunner", FakeRunner)
+
+    result = installers.install_hermes(config)
+
+    assert result == 0
+    assert ["hermes", "mcp", "remove", "llm_wiki"] in calls
+    assert ["hermes", "mcp", "add", "llm_wiki", "--url", "http://new.example/mcp"] in calls
 
 
 def test_setup_cli는_no_hooks와_claude_settings_option을_전달한다(
@@ -580,10 +700,10 @@ def test_install_agent_hooks는_codex_script와_hooks_json을_설치한다(tmp_p
     assert result.settings_path == tmp_path / "codex" / "hooks.json"
 
 
-def test_codex_config는_기존_server_name을_덮어쓰지_않는다(tmp_path: Path) -> None:
+def test_codex_config는_기존_server_name의_url을_덮어쓴다(tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text(
-        '[mcp_servers.llm_wiki]\nurl = "http://old.example/mcp"\n',
+        '[mcp_servers.llm_wiki]\nurl = "http://old.example/mcp"\ntool_timeout_sec = 120\n',
         encoding="utf-8",
     )
 
@@ -594,13 +714,17 @@ def test_codex_config는_기존_server_name을_덮어쓰지_않는다(tmp_path: 
         dry_run=False,
     )
 
-    assert result.changed is False
-    assert "not overwriting" in result.reason
-    assert "http://old.example/mcp" in config_path.read_text(encoding="utf-8")
-    assert "http://new.example/mcp" not in config_path.read_text(encoding="utf-8")
+    content = config_path.read_text(encoding="utf-8")
+    assert result.changed is True
+    assert "Updated Codex MCP server 'llm_wiki'" in result.reason
+    assert 'url = "http://new.example/mcp"' in content
+    assert "http://old.example/mcp" not in content
+    assert "tool_timeout_sec = 120" in content
 
 
-def test_codex_config는_같은_url의_중복_server를_추가하지_않는다(tmp_path: Path) -> None:
+def test_codex_config는_같은_url이_다른_name에_있어도_요청한_server를_추가한다(
+    tmp_path: Path,
+) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text(
         '[mcp_servers.existing]\nurl = "http://127.0.0.1:9999/mcp"\n',
@@ -614,9 +738,10 @@ def test_codex_config는_같은_url의_중복_server를_추가하지_않는다(t
         dry_run=False,
     )
 
-    assert result.changed is False
-    assert "not adding duplicate" in result.reason
-    assert "[mcp_servers.llm_wiki]" not in config_path.read_text(encoding="utf-8")
+    content = config_path.read_text(encoding="utf-8")
+    assert result.changed is True
+    assert "[mcp_servers.existing]" in content
+    assert "[mcp_servers.llm_wiki]" in content
 
 
 def test_codex_config는_새_server만_append한다(tmp_path: Path) -> None:

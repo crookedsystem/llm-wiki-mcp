@@ -73,7 +73,7 @@ uv run python scripts/main.py --agent claude  # 只安装特定 agent
 uv run python scripts/main.py --agent codex --server-url http://127.0.0.1:9999/mcp
 ```
 
-`scripts/main.py` 读取 `.env` 和 shell export 值，安装 skill、MCP config 和 hook command。如果相同 server name 或 URL 已存在，则不会覆盖已有的 MCP config。
+`scripts/main.py` 读取 `.env` 和 shell export 值，安装 skill、MCP config 和 hook command。如果相同 server name 已存在，setup 会用解析出的 MCP URL 刷新该配置。
 
 默认情况下，setup 会先安装 prompt-time context hook。启用 hook 安装时，它会警告 Stop hook 可能影响 LLM response 的正常接收，并要求输入大写 `Y` 或 `N`：`Y` 安装 Stop hook，`N` 只安装 context hook 后继续，非法输入会重新询问，non-interactive stdin/EOF 会在安装前中止。`--dry-run` 会跳过这个 interactive prompt，并且不会把 Stop hook 放进 dry-run 计划。
 

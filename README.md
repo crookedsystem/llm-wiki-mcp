@@ -89,7 +89,7 @@ uv run python scripts/main.py --agent claude  # install a specific agent only
 uv run python scripts/main.py --agent codex --server-url http://127.0.0.1:9999/mcp
 ```
 
-`scripts/main.py` reads `.env` and shell export values to install the `llm-wiki` and `llm-wiki-push` skills, MCP config, and hook commands. If the same server name or URL already exists, it does not overwrite the existing MCP config.
+`scripts/main.py` reads `.env` and shell export values to install the `llm-wiki` and `llm-wiki-push` skills, MCP config, and hook commands. If the same server name already exists, setup refreshes it with the resolved MCP URL.
 
 By default, setup installs the prompt-time context hook first. When hook installation is enabled, it warns about the Stop hook and asks for uppercase `Y` or `N`: `Y` installs the Stop hook, `N` continues with only the context hook, invalid input repeats the prompt, and non-interactive stdin/EOF aborts before installation. `--dry-run` skips this interactive prompt and does not include the Stop hook in the dry-run plan.
 

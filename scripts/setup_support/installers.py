@@ -34,8 +34,8 @@ def install_hermes(config: ResolvedConfig) -> int:
         return 0
 
     existing = runner.run(["hermes", "mcp", "list"], check=False, capture=True)
-    if _has_duplicate(existing.stdout, config.server_name, config.server_url):
-        return 0
+    if _has_server_name(existing.stdout, config.server_name):
+        runner.run(["hermes", "mcp", "remove", config.server_name])
 
     runner.run(["hermes", "mcp", "add", config.server_name, "--url", config.server_url])
     runner.run(["hermes", "mcp", "test", config.server_name], check=False)
@@ -60,12 +60,7 @@ def install_claude(config: ResolvedConfig) -> int:
         ["claude", "mcp", "get", config.server_name], check=False, capture=True
     )
     if not config.dry_run and existing_by_name.returncode == 0:
-        print(f"Claude MCP server '{config.server_name}' already exists; not overwriting.")
-        return 0
-
-    existing = runner.run(["claude", "mcp", "list"], check=False, capture=True)
-    if _has_duplicate(existing.stdout, config.server_name, config.server_url):
-        return 0
+        runner.run(["claude", "mcp", "remove", "-s", config.claude_scope, config.server_name])
 
     runner.run(
         [
@@ -109,18 +104,10 @@ def _install_skills(config: ResolvedConfig, destination_root: Path, agent_label:
         print(f"Installed {agent_label} skill: {destination}")
 
 
-def _has_duplicate(output: str, server_name: str, server_url: str) -> bool:
+def _has_server_name(output: str, server_name: str) -> bool:
     if not output.strip():
         return False
-    if _contains_token(output, server_name):
-        print(f"MCP server '{server_name}' already exists; not overwriting.")
-        return True
-    if server_url in output:
-        print(
-            f"MCP URL {server_url} is already configured under another name; not adding duplicate."
-        )
-        return True
-    return False
+    return bool(_contains_token(output, server_name))
 
 
 def _contains_token(output: str, token: str) -> bool:

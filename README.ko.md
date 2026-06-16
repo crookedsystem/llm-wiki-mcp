@@ -73,7 +73,7 @@ uv run python scripts/main.py --agent claude  # 특정 agent만 설치
 uv run python scripts/main.py --agent codex --server-url http://127.0.0.1:9999/mcp
 ```
 
-`scripts/main.py`는 `.env`와 shell export 값을 읽어 skill, MCP config, hook command를 설치합니다. 같은 server name이나 URL이 이미 있으면 기존 MCP config를 덮어쓰지 않습니다.
+`scripts/main.py`는 `.env`와 shell export 값을 읽어 skill, MCP config, hook command를 설치합니다. 같은 server name이 이미 있으면 계산된 MCP URL로 기존 설정을 갱신합니다.
 
 기본적으로 setup은 prompt-time context hook을 먼저 설치합니다. Hook 설치가 켜져 있으면 Stop hook이 LLM 응답 전달을 방해할 수 있다고 경고하고 대문자 `Y` 또는 `N` 입력을 요구합니다. `Y`는 Stop hook을 설치하고, `N`은 context hook만 설치한 채 계속 진행하며, 잘못된 입력은 다시 묻고, non-interactive stdin/EOF에서는 설치 전에 중단합니다. `--dry-run`은 이 interactive prompt를 건너뛰고 dry-run 계획에 Stop hook을 포함하지 않습니다.
 
