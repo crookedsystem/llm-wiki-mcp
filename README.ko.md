@@ -100,7 +100,7 @@ Skill은 agent에게 다음을 지시합니다:
 - `kb_write_note`를 통해 완전한 Markdown note 작성
 - 삭제는 먼저 `kb_delete_note(dry_run=true)`로 대상과 참조 정리 후보 근거를 확인. 실제 삭제는 사용자의 명시 요청과 반환된 `confirmation_phrase`의 정확한 전달이 필요하며, `reference_cleanup_paths`는 해당 page를 삭제하지 않고 삭제 대상 note를 가리키는 wikilink만 제거함
 - optimistic concurrency를 위해 반환된 `content_hash`를 다음 `if_hash`로 사용
-- raw source는 immutable하게 유지하고 durable wiki 변경 시 `index.md`와 `log.md` 업데이트
+- raw source는 immutable하게 유지하고 durable wiki 변경 시 네비게이션 변화는 `index.md`에 반영하며, `log.md`는 writer가 자동 append하도록 둠
 - 설치된 hook command를 native hook, plugin, wrapper와 함께 사용: 사용자 input 시점에는 compact wiki context를 로드하고, setup에서 선택한 경우 agent 종료 시점에는 stop-time update pass 실행. Claude Code와 Codex는 동일한 `UserPromptSubmit`/`Stop` hook schema(in-loop `decision=block` 재프롬프트)를 공유하므로 선택된 경우 setup이 연결할 수 있습니다. Hermes/Hermess는 finalize 계열 session hook만 제공하므로, plugin/wrapper나 finalize hook에 연결해 out-of-loop update pass를 돌리도록 재사용 script를 설치합니다.
 
 현재 서버가 노출하는 MCP tool은 `kb_read_note`, `kb_write_note`, `kb_delete_note`, `kb_search_notes`, `kb_context`, `kb_push_vault`입니다. Vault/graph counter는 REST `GET /metrics` endpoint로 제공합니다.
@@ -145,7 +145,7 @@ write skill은 frontmatter의 `type` 값으로 페이지가 어느 폴더에 들
 - **링크:** 페이지 간에는 `[[wikilinks]]`, 새 페이지는 가능하면 outbound 링크 2개 이상.
 - **임계값:** entity/concept가 2개 이상 소스에 나오거나 중요한 한 소스의 중심일 때만 페이지 생성. 약 200줄을 넘으면 하위 페이지로 분할.
 
-write skill은 본문 뒤에 provenance trailer(`<!-- kb-provenance: ... -->`)를 자동으로 덧붙이고, 의미 있는 write마다 `index.md`(네비게이션)와 `log.md`(감사 로그)를 갱신합니다. `raw/`의 원본은 immutable로 유지하고, 수정·합성은 wiki 페이지 쪽에서 합니다.
+write skill은 본문 뒤에 provenance trailer(`<!-- kb-provenance: ... -->`)를 자동으로 덧붙입니다. 또한 성공한 페이지 write마다 작성된 페이지의 `type`과 경로를 기준으로 `log.md`에 감사 항목을 append합니다. `log.md`는 append-only이므로 `kb_write_note`로 직접 수정하지 말고, 네비게이션 변화가 있을 때만 `index.md`를 갱신합니다. `raw/`의 원본은 immutable로 유지하고, 수정·합성은 wiki 페이지 쪽에서 합니다.
 
 ### AI가 이걸 탐색하는 방식
 
@@ -156,6 +156,6 @@ AI는 vault를 텍스트 검색 인덱스가 아니라 그래프로 다룹니다
 3. `path_prefix`(`entities`, `concepts`, `comparisons`, `queries`, `raw`)로 검색 범위를 좁힙니다.
 4. 관련 페이지의 `[[wikilinks]]`를 따라가며, 합성에 영향을 줄 수 있으면 링크된 페이지까지 읽습니다.
 5. confidence가 높고, 날짜가 최신이며, 소스가 여러 개인 페이지를 우선하고, 낮은 confidence나 contested 페이지는 명시적으로 드러냅니다.
-6. 답이 재사용 가능한 합성이 되면 `queries/`나 `comparisons/` 페이지로 정리하고 `index.md`·`log.md`를 갱신합니다.
+6. 답이 재사용 가능한 합성이 되면 `queries/`나 `comparisons/` 페이지로 정리하고 네비게이션 변화가 있을 때 `index.md`를 갱신합니다. `log.md`는 writer가 자동 append합니다.
 
 `kb_search_notes`는 전체 파일이 아니라 snippet을 반환하므로, 기존 note 업데이트는 먼저 `kb_read_note`로 전체 body를 읽고, 반환된 body를 patch한 뒤 `kb_write_note`에 `if_hash=content_hash`를 넘깁니다. Snippet만 보고 기존 note를 교체하는 것은 계속 금지합니다.

@@ -51,6 +51,13 @@ def test_git_repository가_연결된_note_작성은_commit_hash를_반환한다(
             "--format=",
             result.commit_hash,
         )
+        assert "log.md" in _git_stdout(
+            vault_root,
+            "show",
+            "--name-only",
+            "--format=",
+            result.commit_hash,
+        )
 
     asyncio.run(exercise_writer())
 

@@ -64,6 +64,8 @@ def test_atomic_batch_write는_중간에_실패하면_작성된_파일을_롤백
         )
         existing_path = first_result.path
         original_content = existing_path.read_text(encoding="utf-8")
+        log_path = tmp_path / "vault" / "log.md"
+        original_log_content = log_path.read_text(encoding="utf-8")
         new_path = tmp_path / "vault" / "concepts" / "new.md"
 
         # When / Then: 기존 note를 stale hash로 수정하려 하면 batch 전체가 실패한다.
@@ -83,6 +85,7 @@ def test_atomic_batch_write는_중간에_실패하면_작성된_파일을_롤백
 
         # Then: 실패 전 새로 생긴 파일은 삭제되고 기존 note 내용은 원래대로 유지된다.
         assert existing_path.read_text(encoding="utf-8") == original_content
+        assert log_path.read_text(encoding="utf-8") == original_log_content
         assert not new_path.exists()
 
     asyncio.run(exercise_writer())

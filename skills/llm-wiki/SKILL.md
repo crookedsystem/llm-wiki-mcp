@@ -75,7 +75,7 @@ Use `kb_context` as the default navigation tool when deciding what to connect, r
 
 Use `kb_read_note` when:
 
-- you need to update `index.md`, `log.md`, or any existing synthesized page;
+- you need to update `index.md` or any existing synthesized page;
 - you need the complete current body/frontmatter rather than snippets;
 - you will call `kb_write_note` for an existing path. Patch the full returned body/fields and pass the returned `content_hash` as `if_hash`.
 
@@ -257,21 +257,28 @@ When any section grows past roughly 50 entries, split it by first letter or subd
 
 ## log.md structure
 
-`log.md` is append-only. Keep entries compact and consistent:
+`log.md` is append-only and is not a normal editable note. Do not call
+`kb_write_note(note_path="log.md", ...)` directly. Create or update the target
+wiki page instead; the writer appends the audit entry to `log.md` automatically
+after a successful write, using the target note's `type` and path.
+
+Keep entries compact and consistent:
 
 ```markdown
 # Wiki Log
 
 > Format: `## [YYYY-MM-DD] action | subject`
-> Actions: ingest, create, update, query, lint, archive, hook-sync
+> Actions: create, update
 
 ## [YYYY-MM-DD] create | concepts/llm-wiki
 - Wrote: concepts/llm-wiki.md
-- Updated: index.md
-- Source: raw/articles/karpathy-llm-wiki.md
+- Type: concept
+- Actor: llm-wiki
 ```
 
-Rotate to `log-YYYY.md` if `log.md` becomes too large, then start a fresh `log.md` with a pointer to the rotated file.
+Only the server's append-only writer may initialize or rewrite `log.md` to add
+new entries and refresh provenance. If `log.md` becomes too large, rotate it as
+an explicit maintenance task instead of editing it during an ordinary page write.
 
 ## Provenance and hash rules
 
@@ -294,7 +301,7 @@ Do not hand-author that trailer in the `body` argument unless you are intentiona
 - For updates, first read the complete current structured note with `kb_read_note` or direct filesystem access. Preserve intended existing fields/body, patch the full returned `body`, change `updated` to the current UTC timestamp, pass the current full-file `content_hash` as `if_hash`, and send the complete replacement field set.
 - For brand-new notes, first use `kb_context(mode="prewrite")` and any needed `kb_search_notes` duplicate checks. If no existing note or equivalent alias is found, create the note without `if_hash`; this is allowed even in MCP-only mode.
 - Keep raw sources under `raw/` immutable. Corrections and synthesis belong in wiki pages such as `entities/`, `concepts/`, `comparisons/`, or `queries/`.
-- Every meaningful write should update `index.md` and append a concise entry to `log.md` unless the user explicitly requests a draft-only note. Update those existing files through the same read-full-body, patch-body, `kb_write_note(if_hash=...)` flow; never reconstruct them from snippets.
+- Every meaningful write should keep `index.md` current when navigation changes. `log.md` is handled automatically by the append-only writer; never update it through the read-full-body, patch-body, `kb_write_note(if_hash=...)` flow.
 - Use lowercase kebab-case note paths such as `concepts/llm-wiki.md` and `entities/anthropic.md`.
 - Prefer `[[wikilinks]]` between wiki pages. New synthesized pages should have at least two useful outbound links when possible.
 - Preserve YAML frontmatter fields by resubmitting structured arguments: `title`, `created`, `updated`, `type`, `tags`, and `sources`.
@@ -309,7 +316,7 @@ Deletion is destructive and must be opt-in for every affected page.
 - Referencing pages are never deleted by `kb_delete_note`. Pass `reference_cleanup_paths` only for exact paths the user explicitly approved for reference cleanup.
 - Actual deletion requires a second call with `dry_run=false` and `confirm` exactly equal to the preview's `confirmation_phrase`.
 - Do not use delete tools from stop hooks, prompt hooks, automatic maintenance, or "durable memory" updates. Hooks may report deletion candidates, but deletion must wait for a direct user request.
-- After deletion, update `index.md` and append `log.md` through `kb_read_note` + `kb_write_note(if_hash=...)` if those files exist and the user asked for the vault graph to remain tidy. Do not silently delete or rewrite navigation pages as a side effect.
+- After deletion, update `index.md` through `kb_read_note` + `kb_write_note(if_hash=...)` if it exists and the user asked for the vault graph to remain tidy. Do not silently delete or rewrite navigation pages as a side effect. Deletion audit entries belong to an explicit append-only log maintenance path, not direct `log.md` editing.
 
 ## LLM Wiki page flow
 
@@ -319,7 +326,7 @@ Deletion is destructive and must be opt-in for every affected page.
 4. Call `kb_context(mode="prewrite")` before writing. Repair relevant broken links, reuse existing link targets, and inspect suggested links before creating pages.
 5. Use `kb_search_notes` with `followup_search` when you need evidence for a proposed link, duplicate-page check, alias check, or entity creation decision.
 6. Create or update only the pages that meet the entity/page thresholds above or the vault `SCHEMA.md` thresholds.
-7. Update navigation (`index.md`) and audit trail (`log.md`) by calling `kb_read_note`, patching the returned full body, and writing with `if_hash=read.content_hash`.
+7. Update navigation (`index.md`) by calling `kb_read_note`, patching the returned full body, and writing with `if_hash=read.content_hash`; do not edit `log.md` directly because the writer appends the audit entry automatically.
 8. If `kb_write_note` reports a stale hash, stop, re-read the note, and re-apply the intended patch only after verifying the concurrent change. Report the exact note paths written and returned hashes.
 
 ## Exploration flow
@@ -332,7 +339,7 @@ Use the wiki as a graph, not just a text search index:
 4. Use `path_prefix` to narrow search or context: `entities`, `concepts`, `comparisons`, `queries`, or `raw`.
 5. Follow `[[wikilinks]]` from relevant pages. Read linked pages before answering if they may change the synthesis.
 6. Prefer pages with higher confidence, newer dates, and multiple sources. Surface low-confidence or contested pages explicitly.
-7. If the answer becomes a reusable synthesis, file it as a `queries/` or `comparisons/` page and update `index.md` and `log.md`.
+7. If the answer becomes a reusable synthesis, file it as a `queries/` or `comparisons/` page and update `index.md` when navigation changes. `log.md` is appended automatically by the writer.
 
 Example search plan:
 
@@ -424,7 +431,7 @@ When both hooks are installed, the generated scripts call `scripts/agent_hooks/l
 - **User-input hook:** call `kb_context` at prompt time and inject a compact `<llm-wiki-context>` block containing link/navigation candidates. It falls back to `kb_search_notes` on older servers.
 - **Stop hook:** after the model finishes, force one final wiki update pass that records durable discoveries, decisions, changed context, and useful wikilinks through MCP. It should use `kb_context(mode="stop"|"prewrite")` first and run `kb_search_notes` only when a returned `followup_search` needs textual evidence.
 
-The hook should run every time, but it should not create noisy pages every time. If the task produced no durable knowledge, either write no content page or append only a compact `hook-sync` log entry if the operator wants a full audit trail.
+The hook should run every time, but it should not create noisy pages every time. If the task produced no durable knowledge, write no content page; `log.md` is append-only and is not a direct hook-sync scratchpad.
 
 ### Claude Code hook shape
 
@@ -461,7 +468,7 @@ Claude Code supports project/user hook events such as `UserPromptSubmit` and `St
 
 `llm-wiki-context-hook.sh` should read the incoming prompt metadata from stdin when the agent provides it, query `kb_context` for orientation pages, broken links, link targets, and suggested links, then print a compact context block to stdout. Keep it short enough that it helps rather than flooding the prompt. If `kb_context` is unavailable, fall back to `kb_search_notes`.
 
-`llm-wiki-stop-hook.sh` should read the session/transcript metadata available to the hook, decide what durable knowledge changed, then use `kb_context`, `kb_search_notes` when evidence is needed, `kb_read_note` for existing pages, and `kb_write_note(if_hash=...)` to update pages, `index.md`, and `log.md` with optimistic concurrency. When selected during setup, the Claude/Codex stop hook emits a one-time `decision=block` response so the agent performs that update pass before its final stop; it must not block again when `stop_hook_active=true`.
+`llm-wiki-stop-hook.sh` should read the session/transcript metadata available to the hook, decide what durable knowledge changed, then use `kb_context`, `kb_search_notes` when evidence is needed, `kb_read_note` for existing pages, and `kb_write_note(if_hash=...)` to update pages and `index.md` with optimistic concurrency. The writer appends `log.md` automatically after successful writes. When selected during setup, the Claude/Codex stop hook emits a one-time `decision=block` response so the agent performs that update pass before its final stop; it must not block again when `stop_hook_active=true`.
 
 The two architectures for stop-time updates — **in-loop** (re-prompt the same session via `decision=block`) versus **out-of-loop** (a stop hook spawns a separate headless writer such as `claude -p` / `codex exec`) — and their trade-offs are compared in the vault concept page `[[concepts/agent-stop-hook-self-update]]`. When selected during setup, this skill installs the in-loop variant for Claude Code and Codex; see the headless fallback note below for unattended setups.
 

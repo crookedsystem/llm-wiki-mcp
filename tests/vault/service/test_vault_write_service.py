@@ -90,6 +90,74 @@ def test_existing_note_수정은_현재_content_hash가_맞을_때만_허용된�
     asyncio.run(exercise_writer())
 
 
+def test_note_작성은_type별_감사_log를_자동_append한다(tmp_path: Path) -> None:
+    async def exercise_writer() -> None:
+        # Given: 새 vault에 concept note를 작성할 writer가 있다.
+        writer = VaultWriteService(
+            paths=VaultPaths(root=tmp_path / "vault"), queue=VaultWriteQueue(), actor="tester"
+        )
+
+        # When: 일반 note를 새로 작성한다.
+        await writer.write_note(_write_command())
+
+        # Then: log.md가 자동 생성되고 작성한 note type과 경로가 감사 로그에 남는다.
+        log_content = (tmp_path / "vault" / "log.md").read_text(encoding="utf-8")
+        assert "# Wiki Log" in log_content
+        assert "## [2026-06-12] create | concepts/today.md" in log_content
+        assert "- Wrote: concepts/today.md" in log_content
+        assert "- Type: concept" in log_content
+        assert "operation=append_log" in log_content
+
+    asyncio.run(exercise_writer())
+
+
+def test_existing_note_수정은_감사_log에_update_entry를_append한다(tmp_path: Path) -> None:
+    async def exercise_writer() -> None:
+        # Given: 이미 작성된 note와 자동 생성된 log.md가 있다.
+        writer = VaultWriteService(
+            paths=VaultPaths(root=tmp_path / "vault"), queue=VaultWriteQueue(), actor="tester"
+        )
+        first_result = await writer.write_note(_write_command(body="## Summary\nInitial body"))
+        log_path = tmp_path / "vault" / "log.md"
+        original_log = log_path.read_text(encoding="utf-8")
+
+        # When: 현재 content hash로 note를 수정한다.
+        await writer.write_note(
+            _write_command(body="## Summary\nFresh update", if_hash=first_result.content_hash)
+        )
+
+        # Then: 기존 로그 본문은 보존되고 update entry만 append된다.
+        updated_log = log_path.read_text(encoding="utf-8")
+        assert original_log.split("<!-- kb-provenance:", maxsplit=1)[0].rstrip() in updated_log
+        assert "## [2026-06-12] update | concepts/today.md" in updated_log
+        assert "- Updated: concepts/today.md" in updated_log
+
+    asyncio.run(exercise_writer())
+
+
+def test_log_md는_direct_write로_수정할_수_없다(tmp_path: Path) -> None:
+    async def exercise_writer() -> None:
+        # Given: append-only log writer가 있다.
+        writer = VaultWriteService(
+            paths=VaultPaths(root=tmp_path / "vault"), queue=VaultWriteQueue(), actor="tester"
+        )
+
+        # When / Then: log.md를 직접 쓰는 command는 거부된다.
+        with pytest.raises(WriteConflictError, match="log.md is append-only"):
+            await writer.write_note(
+                _write_command(
+                    note_path="log.md",
+                    title="Wiki Log",
+                    note_type="log",
+                    tags=("llm-wiki",),
+                    sources=(),
+                    body="## [2026-06-12] create | concepts/manual",
+                )
+            )
+
+    asyncio.run(exercise_writer())
+
+
 def test_write_command는_path와_type_불일치와_full_markdown_body를_거부한다() -> None:
     # When / Then: 폴더와 type이 맞지 않거나 body가 full markdown이면 command 검증에서 거부된다.
     with pytest.raises(ValidationError, match="type 'entity' is not allowed"):

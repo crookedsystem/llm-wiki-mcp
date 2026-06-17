@@ -100,7 +100,7 @@ Context hook 在用户输入时调用 `kb_search_notes`，把相关 wiki snippet
 - 通过 `kb_write_note` 写入完整 Markdown note
 - 删除前先用 `kb_delete_note(dry_run=true)` 预览目标和引用清理候选页面的证据。实际删除必须有用户明确请求，并完全传入返回的 `confirmation_phrase`；`reference_cleanup_paths` 不会删除页面，只会移除指向被删除 note 的 wikilink
 - 使用返回的 `content_hash` 作为下一次 optimistic concurrency 的 `if_hash`
-- 保持 raw source immutable，并在 durable wiki 变更时更新 `index.md` 与 `log.md`
+- 保持 raw source immutable；durable wiki 变更时只在导航变化时更新 `index.md`，并让 writer 自动 append `log.md`
 - 将已安装的 hook command 与 native hook、plugin、wrapper 一起使用：用户输入时加载 compact wiki context，并在 setup 中选中时于 agent 结束时运行 stop-time update pass。Claude Code 和 Codex 共享同一套 `UserPromptSubmit`/`Stop` hook schema（in-loop `decision=block` 再提示），因此被选中时 setup 可以接好。Hermes/Hermess 只提供 finalize 类 session hook，因此 setup 会安装 reusable script，供你接入 plugin/wrapper 或 finalize hook 来运行 out-of-loop update pass。
 
 当前服务器暴露的 MCP tool 是 `kb_read_note`、`kb_write_note`、`kb_delete_note`、`kb_search_notes`、`kb_context` 和 `kb_push_vault`。Vault/graph counter 通过 REST `GET /metrics` endpoint 提供。
@@ -145,7 +145,7 @@ write skill 用 frontmatter 的 `type` 值决定页面归属哪个文件夹。
 - **链接:** 页面间使用 `[[wikilinks]]`；新页面尽量有 2 个以上有用的 outbound 链接。
 - **阈值:** 仅当 entity/concept 出现在 2 个以上 source，或是某个重要 source 的核心时才创建页面；超过约 200 行就拆分。
 
-write skill 会在正文后自动追加 provenance trailer（`<!-- kb-provenance: ... -->`），并在每次有意义的写入时更新 `index.md`（导航）与 `log.md`（审计日志）。`raw/` 下的原始素材保持 immutable，修正与综合写在 wiki 页面里。
+write skill 会在正文后自动追加 provenance trailer（`<!-- kb-provenance: ... -->`）。每次页面写入成功后，它还会根据被写入页面的 `type` 和路径向 `log.md` append 审计条目。`log.md` 是 append-only，不应通过 `kb_write_note` 直接编辑；只有导航变化时才更新 `index.md`。`raw/` 下的原始素材保持 immutable，修正与综合写在 wiki 页面里。
 
 ### AI 探索它的方式
 
@@ -156,6 +156,6 @@ AI 把 vault 当作图，而不只是文本搜索索引。
 3. 用 `path_prefix`（`entities`、`concepts`、`comparisons`、`queries`、`raw`）缩小范围。
 4. 沿相关页面的 `[[wikilinks]]` 跟进，当链接页面可能影响综合时一并阅读。
 5. 优先 confidence 更高、日期更新、source 更多的页面；显式标出低 confidence 或 contested 页面。
-6. 当答案成为可复用的综合时，归档为 `queries/` 或 `comparisons/` 页面并更新 `index.md` 和 `log.md`。
+6. 当答案成为可复用的综合时，归档为 `queries/` 或 `comparisons/` 页面；如果导航发生变化，更新 `index.md`。`log.md` 由 writer 自动 append。
 
 由于 `kb_search_notes` 返回 snippet 而非完整文件，更新已有 note 时应先用 `kb_read_note` 读取完整 body，patch 返回的 body 后再调用 `kb_write_note(if_hash=content_hash)`。仍然禁止只根据 snippet 替换已有 note。

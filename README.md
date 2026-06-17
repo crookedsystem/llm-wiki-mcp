@@ -117,7 +117,7 @@ The skill instructs the agent to:
 - Preview destructive deletion with `kb_delete_note(dry_run=true)` first. Actual deletion requires an explicit user request and the exact returned `confirmation_phrase`; referencing pages are not deleted, and approved `reference_cleanup_paths` only remove wikilinks to the deleted note.
 - Use `$llm-wiki-push` for explicit GitHub vault sync requests. The main `llm-wiki` skill must not call `kb_push_vault`
 - Use the returned `content_hash` as the next `if_hash` for optimistic concurrency
-- Keep raw sources immutable and update `index.md` and `log.md` for durable wiki changes
+- Keep raw sources immutable, update `index.md` when navigation changes, and let the writer append `log.md` automatically for durable wiki changes
 - Use the installed hook commands together with native hooks, plugins, or wrappers: load compact wiki context at user-input time and, when selected during setup, run a stop-time update pass when the agent finishes. Claude Code and Codex share the same `UserPromptSubmit`/`Stop` hook schema (in-loop `decision=block` re-prompt), so setup can wire them when selected. Hermes/Hermess exposes only finalize-style session hooks, so it gets reusable scripts to wire into a plugin/wrapper or finalize hook for an out-of-loop update pass.
 
 The MCP tools the server currently exposes are `kb_read_note`, `kb_write_note`, `kb_delete_note`, `kb_search_notes`, `kb_context`, and `kb_push_vault`. Vault/graph counters are provided through the REST `GET /metrics` endpoint.
@@ -162,7 +162,7 @@ Every synthesized page follows these rules:
 - **Links:** `[[wikilinks]]` between pages; new pages should have at least two useful outbound links when possible.
 - **Thresholds:** create a page only when an entity/concept appears in 2+ sources or is central to one important source; split pages over ~200 lines.
 
-The write skill automatically appends a provenance trailer (`<!-- kb-provenance: ... -->`) after the body, and updates `index.md` (navigation) and `log.md` (audit trail) on every meaningful write when it can safely read their complete current contents. Sources under `raw/` stay immutable; corrections and synthesis go into the wiki pages.
+The write skill automatically appends a provenance trailer (`<!-- kb-provenance: ... -->`) after the body. It also appends an audit entry to `log.md` after every successful page write, using the written page's `type` and path. `log.md` is append-only and must not be edited directly through `kb_write_note`; update `index.md` only when navigation changes. Sources under `raw/` stay immutable; corrections and synthesis go into the wiki pages.
 
 ### How the AI explores it
 
@@ -173,6 +173,6 @@ The AI treats the vault as a graph, not just a text-search index.
 3. Narrow with `path_prefix` (`entities`, `concepts`, `comparisons`, `queries`, `raw`).
 4. Follow `[[wikilinks]]` from relevant pages, reading linked pages when they may change the synthesis.
 5. Prefer pages with higher confidence, newer dates, and multiple sources; surface low-confidence or contested pages explicitly.
-6. When an answer becomes a reusable synthesis, file it as a `queries/` or `comparisons/` page and update `index.md` and `log.md`.
+6. When an answer becomes a reusable synthesis, file it as a `queries/` or `comparisons/` page and update `index.md` if navigation changes. The writer appends `log.md` automatically.
 
 Because `kb_search_notes` returns snippets rather than whole files, existing-note updates use `kb_read_note` first, patch the complete returned body, and then call `kb_write_note` with `if_hash=content_hash`. Snippet-only replacement remains forbidden.

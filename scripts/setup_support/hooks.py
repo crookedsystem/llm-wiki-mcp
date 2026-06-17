@@ -142,8 +142,8 @@ def write_hooks_readme(
     stop_hook_description = (
         "The stop hook asks the agent to run a final LLM Wiki update pass through MCP before it "
         "finishes. It should write only durable facts/decisions/procedures, update "
-        "`index.md`/`log.md` when content changes, and use `content_hash` as `if_hash` for safe "
-        "updates."
+        "`index.md` when navigation changes, rely on automatic append-only `log.md` audit "
+        "entries, and use `content_hash` as `if_hash` for safe updates."
         if stop_hook is not None
         else "The stop hook was not installed for this setup run."
     )

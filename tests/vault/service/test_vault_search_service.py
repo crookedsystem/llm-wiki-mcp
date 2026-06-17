@@ -112,6 +112,26 @@ def test_search_notes는_path_prefix와_거부된_디렉터리를_적용한다(t
     assert [result.path for result in results.results] == ["concepts/retrieval.md"]
 
 
+def test_search_notes는_append_only_log를_일반_결과에서_제외한다(tmp_path: Path) -> None:
+    # Given: 같은 query가 synthesized page와 감사 log에 모두 남아 있다.
+    vault_root = tmp_path / "vault"
+    (vault_root / "concepts").mkdir(parents=True)
+    (vault_root / "concepts" / "agent-memory.md").write_text(
+        "# Agent Memory\n\nAgent memory page.\n",
+        encoding="utf-8",
+    )
+    (vault_root / "log.md").write_text(
+        "# Wiki Log\n\n## [2026-06-12] create | concepts/agent-memory.md\n",
+        encoding="utf-8",
+    )
+
+    # When: 일반 검색을 수행한다.
+    results = _search_notes(vault_root, "agent memory")
+
+    # Then: audit trail은 검색 결과를 오염시키지 않고 실제 page만 반환된다.
+    assert [result.path for result in results.results] == ["concepts/agent-memory.md"]
+
+
 def test_search_notes는_query_match가_없으면_structure_boost만으로_결과를_만들지_않는다(
     tmp_path: Path,
 ) -> None:

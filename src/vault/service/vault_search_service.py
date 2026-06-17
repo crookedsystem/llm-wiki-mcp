@@ -34,6 +34,8 @@ class VaultSearchService(FrozenModel):
 
         for note_path in self.note_repository.markdown_notes(search_root):
             relative_path = self.note_repository.relative_path(note_path)
+            if relative_path == "log.md":
+                continue
             content = self.note_repository.read_note(note_path)
             metadata = extract_note_metadata(content)
             score = self.score_service.score_note(

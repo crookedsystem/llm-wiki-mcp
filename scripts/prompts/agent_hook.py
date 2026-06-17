@@ -31,7 +31,8 @@ Step 3 — If something qualifies, use the configured llm-wiki MCP server to:
    evidence, run `kb_search_notes` with the returned followup_search before writing;
 3. write only the durable knowledge identified in Step 1 (summarize — never copy private
    transcripts wholesale);
-4. update `index.md` and append a compact `log.md` entry for any durable wiki change;
+4. update `index.md` for navigation changes; `log.md` is append-only and is appended
+   automatically by the writer;
 5. use returned `content_hash` values as `if_hash` when updating existing notes.
 Then stop normally.
 """
