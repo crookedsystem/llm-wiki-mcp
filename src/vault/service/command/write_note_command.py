@@ -187,8 +187,7 @@ class WriteNoteCommand(FrozenModel):
         ]
         if unreferenced_paths:
             raise ValueError(
-                "attachment paths must be referenced in body: "
-                + ", ".join(unreferenced_paths)
+                "attachment paths must be referenced in body: " + ", ".join(unreferenced_paths)
             )
         return self
 
