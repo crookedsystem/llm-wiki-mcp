@@ -204,20 +204,18 @@ class VaultWriteService(FrozenModel):
         day = source_command.updated.date().isoformat()
         path = relative_path.as_posix()
         action_line = "Wrote" if action == "create" else "Updated"
-        return "\n".join(
-            [
-                f"## [{day}] {action} | {path}",
-                f"- {action_line}: {path}",
-                f"- Type: {source_command.type}",
-                f"- Actor: {self.actor}",
-            ]
-        )
+        lines = [
+            f"## [{day}] {action} | {path}",
+            f"- {action_line}: {path}",
+        ]
+        lines.extend(f"- Source: {source}" for source in source_command.sources)
+        return "\n".join(lines)
 
     def _initial_log_body(self) -> str:
         return "\n".join(
             [
                 "> Format: `## [YYYY-MM-DD] action | subject`",
-                "> Actions: create, update",
+                "> Actions: ingest, create, update, query, lint, archive, hook-sync",
             ]
         )
 

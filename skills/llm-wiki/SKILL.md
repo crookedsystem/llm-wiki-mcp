@@ -268,12 +268,11 @@ Keep entries compact and consistent:
 # Wiki Log
 
 > Format: `## [YYYY-MM-DD] action | subject`
-> Actions: create, update
+> Actions: ingest, create, update, query, lint, archive, hook-sync
 
 ## [YYYY-MM-DD] create | concepts/llm-wiki
 - Wrote: concepts/llm-wiki.md
-- Type: concept
-- Actor: llm-wiki
+- Source: raw/articles/karpathy-llm-wiki.md
 ```
 
 Only the server's append-only writer may initialize or rewrite `log.md` to add

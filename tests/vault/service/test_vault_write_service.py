@@ -103,9 +103,11 @@ def test_note_작성은_type별_감사_log를_자동_append한다(tmp_path: Path
         # Then: log.md가 자동 생성되고 작성한 note type과 경로가 감사 로그에 남는다.
         log_content = (tmp_path / "vault" / "log.md").read_text(encoding="utf-8")
         assert "# Wiki Log" in log_content
+        assert "> Actions: ingest, create, update, query, lint, archive, hook-sync" in log_content
         assert "## [2026-06-12] create | concepts/today.md" in log_content
         assert "- Wrote: concepts/today.md" in log_content
-        assert "- Type: concept" in log_content
+        assert "- Source: raw/articles/source.md" in log_content
+        assert "- Actor:" not in log_content
         assert "operation=append_log" in log_content
 
     asyncio.run(exercise_writer())
@@ -131,6 +133,56 @@ def test_existing_note_수정은_감사_log에_update_entry를_append한다(tmp_
         assert original_log.split("<!-- kb-provenance:", maxsplit=1)[0].rstrip() in updated_log
         assert "## [2026-06-12] update | concepts/today.md" in updated_log
         assert "- Updated: concepts/today.md" in updated_log
+
+    asyncio.run(exercise_writer())
+
+
+def test_existing_log_형식은_유지하고_새_entry만_append한다(tmp_path: Path) -> None:
+    async def exercise_writer() -> None:
+        # Given: 기존 log.md가 기존 Wrote/Updated/Source 형식으로 작성되어 있다.
+        vault_root = tmp_path / "vault"
+        (vault_root).mkdir(parents=True)
+        existing_log = (
+            "---\n"
+            "title: Wiki Log\n"
+            "created: 2026-06-11T09:30:45Z\n"
+            "updated: 2026-06-11T10:31:46Z\n"
+            "type: log\n"
+            "tags:\n"
+            "  - llm-wiki\n"
+            "sources: []\n"
+            "confidence: high\n"
+            "contested: false\n"
+            "---\n\n"
+            "# Wiki Log\n\n"
+            "> Format: `## [YYYY-MM-DD] action | subject`\n"
+            "> Actions: ingest, create, update, query, lint, archive, hook-sync\n\n"
+            "## [2026-06-11] create | concepts/existing.md\n"
+            "- Wrote: concepts/existing.md\n"
+            "- Updated: index.md\n"
+            "- Source: raw/articles/existing.md\n"
+        )
+        source_hash = compute_sha256(existing_log)
+        (vault_root / "log.md").write_text(
+            f"{existing_log}"
+            f"<!-- kb-provenance: source_hash={source_hash}; "
+            "operation=write_note; actor=llm-wiki -->\n",
+            encoding="utf-8",
+        )
+        writer = VaultWriteService(paths=VaultPaths(root=vault_root), queue=VaultWriteQueue())
+
+        # When: 새 note를 작성해 log.md에 자동 감사 entry를 붙인다.
+        await writer.write_note(_write_command())
+
+        # Then: 기존 entry 형식은 사라지지 않고 새 entry도 같은 Source 중심 형식으로 붙는다.
+        log_content = (vault_root / "log.md").read_text(encoding="utf-8")
+        assert "## [2026-06-11] create | concepts/existing.md" in log_content
+        assert "- Updated: index.md" in log_content
+        assert "- Source: raw/articles/existing.md" in log_content
+        assert "## [2026-06-12] create | concepts/today.md" in log_content
+        assert "- Wrote: concepts/today.md" in log_content
+        assert "- Source: raw/articles/source.md" in log_content
+        assert "- Actor:" not in log_content
 
     asyncio.run(exercise_writer())
 
