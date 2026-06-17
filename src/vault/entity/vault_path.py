@@ -21,7 +21,12 @@ class VaultPaths(FrozenModel):
         relative_path = Path(note_path)
         if relative_path.suffix != ".md":
             raise VaultPathError("Only markdown note paths are supported")
+        return self.resolve_file_path(relative_path)
 
+    def resolve_file_path(self, file_path: str | Path) -> Path:
+        relative_path = Path(file_path)
+        if relative_path.is_absolute():
+            raise VaultPathError("Path must be relative to the vault")
         vault_root = self.root.resolve()
         resolved_path = (vault_root / relative_path).resolve()
         self._ensure_inside_vault(vault_root, resolved_path)

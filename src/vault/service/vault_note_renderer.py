@@ -23,7 +23,11 @@ class VaultNoteRenderer(FrozenModel):
                 "contested": command.contested,
             }
         )
-        return f"---\n{frontmatter}---\n\n# {command.title}\n\n{command.body}\n"
+        body = command.body
+        if command.attachments:
+            links = "\n".join(attachment.markdown_link() for attachment in command.attachments)
+            body = f"{body}\n\n## Attachments\n{links}"
+        return f"---\n{frontmatter}---\n\n# {command.title}\n\n{body}\n"
 
     def _render_frontmatter(self, fields: dict[str, FrontmatterValue]) -> str:
         lines: list[str] = []

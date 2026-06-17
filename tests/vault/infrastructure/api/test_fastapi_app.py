@@ -82,6 +82,7 @@ def test_fastapi_app은_tools_endpoint에서_mcp_tool_schema를_문서화한다(
     push_vault = next(tool for tool in tools if tool["name"] == "kb_push_vault")
     assert "Read a complete existing Markdown wiki note" in read_note["description"]
     assert "structured fields" in write_note["description"]
+    assert "base64-encoded image or file payloads" in write_note["description"]
     assert "Actual deletion requires dry_run=false" in delete_note["description"]
     assert "Search Markdown notes" in search_notes["description"]
     assert "wiki link context map" in context["description"]
@@ -118,6 +119,15 @@ def test_fastapi_app은_tools_endpoint에서_mcp_tool_schema를_문서화한다(
     assert write_note["inputSchema"]["properties"]["body"]["type"] == "string"
     assert write_note["inputSchema"]["properties"]["created"]["format"] == "date-time"
     assert write_note["inputSchema"]["properties"]["updated"]["format"] == "date-time"
+    attachment_schema = write_note["inputSchema"]["properties"]["attachments"]
+    assert attachment_schema["default"] is None
+    assert attachment_schema["anyOf"][0]["type"] == "array"
+    attachment_item_ref = attachment_schema["anyOf"][0]["items"]["$ref"]
+    attachment_schema_name = attachment_item_ref.removeprefix("#/$defs/")
+    attachment_properties = write_note["inputSchema"]["$defs"][attachment_schema_name]["properties"]
+    assert attachment_properties["path"]["type"] == "string"
+    assert attachment_properties["mime_type"]["type"] == "string"
+    assert attachment_properties["data_base64"]["type"] == "string"
     assert (
         write_note["inputSchema"]["properties"]["created"]["pattern"]
         == r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
