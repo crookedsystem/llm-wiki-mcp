@@ -194,6 +194,42 @@ def test_existing_log_형식은_유지하고_새_entry만_append한다(tmp_path:
     asyncio.run(exercise_writer())
 
 
+def test_plain_legacy_log도_structured_log로_마이그레이션하며_append한다(
+    tmp_path: Path,
+) -> None:
+    async def exercise_writer() -> None:
+        # Given: 이전 템플릿처럼 YAML frontmatter가 없는 plain log.md가 있다.
+        vault_root = tmp_path / "vault"
+        vault_root.mkdir(parents=True)
+        (vault_root / "log.md").write_text(
+            "# Wiki Log\n\n"
+            "> Format: `## [YYYY-MM-DD] action | subject`\n"
+            "> Actions: ingest, create, update, query, lint, archive, hook-sync\n\n"
+            "## [2026-06-11] create | concepts/existing.md\n"
+            "- Wrote: concepts/existing.md\n"
+            "- Source: raw/articles/existing.md\n",
+            encoding="utf-8",
+        )
+        writer = VaultWriteService(paths=VaultPaths(root=vault_root), queue=VaultWriteQueue())
+
+        # When: 일반 note를 작성한다.
+        result = await writer.write_note(_write_command())
+
+        # Then: target note 작성이 실패하지 않고 log.md는 structured note로 마이그레이션된다.
+        log_content = (vault_root / "log.md").read_text(encoding="utf-8")
+        assert result.path.exists()
+        assert log_content.startswith("---\ntitle: Wiki Log\n")
+        assert "\n# Wiki Log\n\n" in log_content
+        assert "## [2026-06-11] create | concepts/existing.md" in log_content
+        assert "- Source: raw/articles/existing.md" in log_content
+        assert "## [2026-06-12] create | concepts/today.md" in log_content
+        assert "- Wrote: concepts/today.md" in log_content
+        assert "- Source: raw/articles/source.md" in log_content
+        assert "operation=append_log" in log_content
+
+    asyncio.run(exercise_writer())
+
+
 def test_log_md는_direct_write로_수정할_수_없다(tmp_path: Path) -> None:
     async def exercise_writer() -> None:
         # Given: append-only log writer가 있다.

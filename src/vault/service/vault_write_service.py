@@ -5,6 +5,7 @@ from pydantic import Field
 from common.model import FrozenModel
 from vault.component.write_queue import VaultWriteQueue
 from vault.entity.vault_note import (
+    PROVENANCE_PREFIX,
     append_provenance_trailer,
     compute_sha256,
 )
@@ -179,9 +180,28 @@ class VaultWriteService(FrozenModel):
         entry = self._audit_log_entry(source_command, relative_path=relative_path, action=action)
 
         if log_path.exists():
-            current_log = VaultReadService(paths=self.paths).read_note(
-                ReadNoteCommand(note_path=_APPEND_ONLY_LOG_PATH)
-            )
+            raw_log = log_path.read_text(encoding="utf-8")
+            current_hash = compute_sha256(raw_log)
+            try:
+                current_log = VaultReadService(paths=self.paths).read_note(
+                    ReadNoteCommand(note_path=_APPEND_ONLY_LOG_PATH)
+                )
+            except ValueError:
+                body = f"{self._plain_log_body(raw_log).rstrip()}\n\n{entry}"
+                return WriteNoteCommand(
+                    note_path=_APPEND_ONLY_LOG_PATH,
+                    title="Wiki Log",
+                    type="log",
+                    tags=("llm-wiki", "audit-log"),
+                    sources=(),
+                    body=body,
+                    created=source_command.updated,
+                    updated=source_command.updated,
+                    confidence="high",
+                    contested=False,
+                    if_hash=current_hash,
+                )
+
             body = f"{current_log.body.rstrip()}\n\n{entry}"
             return WriteNoteCommand(
                 note_path=_APPEND_ONLY_LOG_PATH,
@@ -194,7 +214,7 @@ class VaultWriteService(FrozenModel):
                 updated=max(current_log.updated, source_command.updated),
                 confidence=current_log.confidence,
                 contested=current_log.contested,
-                if_hash=current_log.content_hash,
+                if_hash=current_hash,
             )
 
         return WriteNoteCommand(
@@ -234,6 +254,21 @@ class VaultWriteService(FrozenModel):
                 "> Actions: ingest, create, update, query, lint, archive, hook-sync",
             ]
         )
+
+    def _plain_log_body(self, raw_log: str) -> str:
+        lines = raw_log.splitlines()
+        while lines and not lines[-1].strip():
+            lines.pop()
+        if lines and lines[-1].startswith(PROVENANCE_PREFIX):
+            lines.pop()
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        if lines and lines[0] == "# Wiki Log":
+            lines.pop(0)
+            if lines and not lines[0].strip():
+                lines.pop(0)
+        body = "\n".join(lines).strip("\n")
+        return body if body else self._initial_log_body()
 
     def _restore_snapshots(self, snapshots: list[_FileSnapshot]) -> None:
         for snapshot in snapshots:
