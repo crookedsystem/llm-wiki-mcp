@@ -5,7 +5,7 @@ description: "Use llm-wiki from Hermes/Hermess, Claude Code, or Codex to search,
 
 # LLM Wiki
 
-Use the running `llm-wiki` server as the write/search bridge to a Git-backed Obsidian or Markdown vault, then maintain that vault with the LLM Wiki pattern: raw sources stay immutable, synthesized pages stay interlinked, and every durable change updates navigation and log files.
+Use the running `llm-wiki` server as the write/search bridge to an Obsidian or Markdown vault, then maintain that vault with the LLM Wiki pattern: raw sources stay immutable, synthesized pages stay interlinked, and every durable change updates navigation and log files.
 
 This is the single canonical skill for Hermes/Hermess, Claude Code, and Codex. The setup scripts copy this same skill into each agent's expected skill directory; only MCP config format, install path, and tool-name prefix differ by agent.
 
@@ -26,7 +26,6 @@ The main wiki workflow uses these tool names:
 - `kb_search_notes(query, limit?, path_prefix?)` — low-level evidence search. It searches the Markdown LLM Wiki vault and returns ranked paths, titles, page types, tags, content hashes, and line snippets. Use it when `kb_context.followup_search` or your own question needs textual evidence.
 
 Vault and graph counters are exposed as a REST API endpoint at `GET /metrics`, not as MCP tools.
-Vault GitHub push is handled by the separate `$llm-wiki-push` skill and must not be called from this skill.
 Agent UIs may prefix MCP tool names. If you see prefixed names, map them back to the raw tool names above.
 
 ## Vault operating model
@@ -501,7 +500,6 @@ When you must guarantee the update runs unattended, a stop/finalize hook can spa
 - Do not delete related pages just because they are linked, orphaned, stale, or appear redundant. Ask the user directly with detailed evidence before cleaning references, and use separate explicit deletion requests for any additional page deletion.
 - Do not treat `kb_context` as evidence text. It is a link/navigation map; run `kb_search_notes` or read full files before making factual claims or replacing existing note bodies.
 - Do not full-rewrite existing notes from `kb_context` metadata or `kb_search_notes` snippets alone. Existing-note rewrites are allowed after `kb_read_note` or direct file reads provide the full current body and `content_hash`; stale hash failures require a fresh read before retry.
-- Do not call `kb_push_vault` from this skill. Use `$llm-wiki-push` for explicit vault GitHub push requests.
 - Treat the MCP endpoint as local by default: `http://127.0.0.1:9999/mcp`.
 - If the server later enables bearer auth, add the authorization header in the agent MCP config before using write tools.
 - Do not write raw, private transcripts wholesale into the wiki. Summarize durable decisions, facts, and relationships.

@@ -1,12 +1,10 @@
 import asyncio
 import base64
-import subprocess
 from pathlib import Path
 from typing import TypedDict, cast
 
 import pytest
 from mcp.server.fastmcp.exceptions import ToolError
-from pytest import MonkeyPatch
 
 from common.config import Settings
 from common.runtime_registry import create_runtime
@@ -52,14 +50,6 @@ class ContextToolResult(TypedDict):
     usage: list[str]
 
 
-class PushToolResult(TypedDict):
-    committed: bool
-    commit_hash: str
-    pushed: bool
-    push_tool: str
-    push_command: str
-
-
 class RelatedCandidateToolResult(TypedDict):
     path: str
     relationships: list[str]
@@ -89,7 +79,6 @@ def test_mcp_server는_기본_http_설정을_사용한다(tmp_path: Path) -> Non
         runtime.write_service,
         runtime.search_service,
         runtime.context_service,
-        runtime.git_push_service,
         runtime.delete_service,
     )
 
@@ -116,7 +105,6 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
             runtime.write_service,
             runtime.search_service,
             runtime.context_service,
-            runtime.git_push_service,
             runtime.delete_service,
         )
 
@@ -130,7 +118,10 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
                 "type": "concept",
                 "tags": ["agent-memory"],
                 "sources": ["raw/articles/source.md"],
-                "body": "## Summary\nAgent memory keeps durable context.",
+                "body": (
+                    "## Summary\nAgent memory keeps durable context.\n\n"
+                    "Memory diagram: ![memory.png](raw/assets/memory.png)"
+                ),
                 "created": "2026-06-12T09:30:45Z",
                 "updated": "2026-06-12T10:31:46Z",
                 "confidence": "medium",
@@ -163,7 +154,6 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
             "kb_delete_note",
             "kb_search_notes",
             "kb_context",
-            "kb_push_vault",
         }
         assert "Read a complete existing Markdown wiki note" in (
             tool_by_name["kb_read_note"].description or ""
@@ -174,9 +164,6 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
         )
         assert "Search Markdown notes" in (tool_by_name["kb_search_notes"].description or "")
         assert "wiki link context map" in (tool_by_name["kb_context"].description or "")
-        assert "push origin to the current branch" in (
-            tool_by_name["kb_push_vault"].description or ""
-        )
         assert structured_write_result["source_hash"]
         assert structured_write_result["attachment_paths"] == [
             (vault_root / "raw" / "assets" / "memory.png").resolve().as_posix()
@@ -189,7 +176,7 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
         assert structured_read_result["sources"] == ["raw/articles/source.md"]
         assert structured_read_result["body"] == (
             "## Summary\nAgent memory keeps durable context.\n\n"
-            "## Attachments\n![memory.png](raw/assets/memory.png)"
+            "Memory diagram: ![memory.png](raw/assets/memory.png)"
         )
         assert structured_read_result["created"] == "2026-06-12T09:30:45Z"
         assert structured_read_result["updated"] == "2026-06-12T10:31:46Z"
@@ -237,7 +224,6 @@ def test_mcp_delete_tool은_dry_run에서_참조_정리_후보와_confirmation�
             runtime.write_service,
             runtime.search_service,
             runtime.context_service,
-            runtime.git_push_service,
             runtime.delete_service,
         )
 
@@ -292,7 +278,6 @@ def test_mcp_delete_tool은_confirmation이_정확할_때만_명시된_참조를
             runtime.write_service,
             runtime.search_service,
             runtime.context_service,
-            runtime.git_push_service,
             runtime.delete_service,
         )
 
@@ -370,7 +355,6 @@ def test_mcp_delete_tool은_dry_run_이후_내용이_바뀌면_기존_confirmati
             runtime.write_service,
             runtime.search_service,
             runtime.context_service,
-            runtime.git_push_service,
             runtime.delete_service,
         )
 
@@ -419,7 +403,6 @@ def test_mcp_server는_write_timestamp의_초단위_UTC_Z_datetime을_검증한�
             runtime.write_service,
             runtime.search_service,
             runtime.context_service,
-            runtime.git_push_service,
             runtime.delete_service,
         )
 
@@ -438,63 +421,5 @@ def test_mcp_server는_write_timestamp의_초단위_UTC_Z_datetime을_검증한�
                     "updated": "2026-06-12T10:31:46Z",
                 },
             )
-
-    asyncio.run(exercise_server())
-
-
-def test_mcp_push_tool은_vault_변경사항을_commit하고_push한다(
-    tmp_path: Path,
-    monkeypatch: MonkeyPatch,
-) -> None:
-    async def exercise_server() -> None:
-        # Given: 원격 bare repository가 연결된 vault MCP server가 있다.
-        vault_root = tmp_path / "vault"
-        remote_root = tmp_path / "remote.git"
-        vault_root.mkdir()
-        subprocess.run(["git", "init"], cwd=vault_root, check=True, capture_output=True)
-        subprocess.run(
-            ["git", "checkout", "-b", "main"],
-            cwd=vault_root,
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(["git", "init", "--bare", remote_root], check=True, capture_output=True)
-        subprocess.run(
-            ["git", "remote", "add", "origin", str(remote_root)],
-            cwd=vault_root,
-            check=True,
-            capture_output=True,
-        )
-        (vault_root / "concepts").mkdir()
-        (vault_root / "concepts" / "agent-memory.md").write_text(
-            "# Agent Memory\n",
-            encoding="utf-8",
-        )
-        monkeypatch.setattr(
-            "vault.infrastructure.repository.git_repository.shutil.which",
-            lambda _: None,
-        )
-        settings = Settings(host="127.0.0.1", vault_path=vault_root)
-        runtime = create_runtime(settings)
-        server = create_mcp_server(
-            settings,
-            runtime.read_service,
-            runtime.write_service,
-            runtime.search_service,
-            runtime.context_service,
-            runtime.git_push_service,
-            runtime.delete_service,
-        )
-
-        # When: kb_push_vault tool을 호출한다.
-        _, push_result = await server.call_tool("kb_push_vault", {})
-        structured_push_result = cast(PushToolResult, push_result)
-
-        # Then: 변경사항이 commit되고 원격 main branch로 push된다.
-        assert structured_push_result["committed"] is True
-        assert structured_push_result["pushed"] is True
-        assert structured_push_result["push_tool"] == "git"
-        assert structured_push_result["push_command"] == "git push origin main"
-        assert len(structured_push_result["commit_hash"]) == 40
 
     asyncio.run(exercise_server())

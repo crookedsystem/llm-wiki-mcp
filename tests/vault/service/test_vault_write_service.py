@@ -63,7 +63,6 @@ def test_note_작성은_hash와_provenance를_함께_반환한다(tmp_path: Path
         assert "\n# Today\n\n## Summary\nBody text\n" in source_content
         assert result.source_hash == compute_sha256(source_content)
         assert result.content_hash == compute_sha256(written_content)
-        assert result.commit_hash is None
         assert f"source_hash={result.source_hash}" in written_content
         assert "actor=tester" in written_content
 
@@ -112,13 +111,22 @@ def test_note_작성은_base64_attachment를_vault_file로_저장하고_링크�
         )
 
         # When: note를 작성한다.
-        result = await writer.write_note(_write_command(attachments=(attachment,)))
+        result = await writer.write_note(
+            _write_command(
+                body=(
+                    "## Summary\nBody text\n\n"
+                    "차트는 ![chart.png](raw/assets/chart.png)에서 확인한다."
+                ),
+                attachments=(attachment,),
+            )
+        )
 
-        # Then: attachment 파일이 vault 안에 생성되고 note에는 이미지 링크가 렌더링된다.
+        # Then: attachment 파일이 vault 안에 생성되고 note 본문은 입력 흐름을 유지한다.
         attachment_path = tmp_path / "vault" / "raw" / "assets" / "chart.png"
         assert attachment_path.read_bytes() == b"fake image bytes"
         written_content = result.path.read_text(encoding="utf-8")
-        assert "\n## Attachments\n![chart.png](raw/assets/chart.png)\n" in written_content
+        assert "차트는 ![chart.png](raw/assets/chart.png)에서 확인한다." in written_content
+        assert "## Attachments" not in written_content
         assert result.attachment_paths == (attachment_path.resolve(),)
 
     asyncio.run(exercise_writer())
@@ -277,3 +285,14 @@ def test_write_command는_unsafe_attachment_payload를_거부한다() -> None:
 
     with pytest.raises(ValidationError, match="valid base64"):
         WriteNoteAttachment(path="raw/assets/chart.png", mime_type="image/png", data_base64="???")
+
+
+def test_write_command는_body에서_참조하지_않는_attachment를_거부한다() -> None:
+    attachment = WriteNoteAttachment(
+        path="raw/assets/chart.png",
+        mime_type="image/png",
+        data_base64="Zm9v",
+    )
+
+    with pytest.raises(ValidationError, match="referenced in body"):
+        _write_command(attachments=(attachment,))

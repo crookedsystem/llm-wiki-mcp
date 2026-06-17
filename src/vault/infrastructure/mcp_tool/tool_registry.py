@@ -7,7 +7,6 @@ from vault.dto.request.search_notes_request import SearchNotesRequest
 from vault.dto.request.write_note_request import WriteNoteRequest
 from vault.dto.response.context_response import ContextResponse, ContextResponseMapper
 from vault.dto.response.delete_note_response import DeleteNoteResponse, delete_note_response
-from vault.dto.response.git_push_response import GitPushResponse, git_push_response
 from vault.dto.response.read_note_response import ReadNoteResponse, read_note_response
 from vault.dto.response.search_notes_response import (
     SearchNotesResponse,
@@ -26,7 +25,6 @@ from vault.service.command.write_note_command import (
 from vault.service.note_timestamp import NoteTimestamp
 from vault.service.vault_context_service import VaultContextService
 from vault.service.vault_delete_service import VaultDeleteService
-from vault.service.vault_git_push_service import VaultGitPushService
 from vault.service.vault_read_service import VaultReadService
 from vault.service.vault_search_service import VaultSearchService
 from vault.service.vault_write_service import VaultWriteService
@@ -38,7 +36,6 @@ def register_vault_tools(
     write_service: VaultWriteService,
     search_service: VaultSearchService,
     context_service: VaultContextService,
-    git_push_service: VaultGitPushService,
     delete_service: VaultDeleteService,
 ) -> None:
     @server.tool(
@@ -58,7 +55,8 @@ def register_vault_tools(
             "Write a Markdown wiki note from structured fields. The tool renders YAML "
             "frontmatter, title heading, body, and provenance inside the configured vault. "
             "Optional attachments accept base64-encoded image or file payloads and are "
-            "written to vault-relative paths, with Markdown links appended to the note. "
+            "written to vault-relative paths. Each attachment path must already be referenced "
+            "naturally in body as a Markdown or Obsidian link. "
             "created and updated must be UTC ISO datetimes with seconds and trailing Z "
             "(YYYY-MM-DDTHH:MM:SSZ). "
             "Existing notes require the current content_hash as if_hash."
@@ -157,14 +155,3 @@ def register_vault_tools(
         )
         result = context_service.context(request.to_command())
         return ContextResponseMapper.to_response(result)
-
-    @server.tool(
-        description=(
-            "Commit all pending vault changes with a UTC "
-            "'YYYY-MM-DD HH:MM - vault sync' message and push origin to the current branch. "
-            "The server checks GitHub CLI auth first, then falls back to git push."
-        )
-    )
-    async def kb_push_vault() -> GitPushResponse:
-        result = await git_push_service.push_vault()
-        return git_push_response(result)

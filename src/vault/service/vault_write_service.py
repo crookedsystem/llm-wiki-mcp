@@ -10,7 +10,6 @@ from vault.entity.vault_note import (
 )
 from vault.entity.vault_path import VaultPaths
 from vault.error.write_error import WriteConflictError
-from vault.infrastructure.repository.git_repository import GitRepository
 from vault.service.command.write_note_command import WriteNoteCommand
 from vault.service.result.write_note_result import WriteNoteResult
 from vault.service.vault_note_renderer import VaultNoteRenderer
@@ -25,7 +24,6 @@ class VaultWriteService(FrozenModel):
     paths: VaultPaths
     queue: VaultWriteQueue
     actor: str = "llm-wiki"
-    git_repository: GitRepository | None = None
     note_renderer: VaultNoteRenderer = Field(default_factory=VaultNoteRenderer)
 
     async def write_note(self, command: WriteNoteCommand) -> WriteNoteResult:
@@ -77,32 +75,15 @@ class VaultWriteService(FrozenModel):
             resolved_path.parent.mkdir(parents=True, exist_ok=True)
             resolved_path.write_text(final_content, encoding="utf-8")
             self._write_attachments(command, attachment_paths)
-            commit_hash = self._commit_written_paths([resolved_path, *attachment_paths])
             return WriteNoteResult(
                 path=resolved_path,
                 source_hash=source_hash,
                 content_hash=compute_sha256(final_content),
-                commit_hash=commit_hash,
                 attachment_paths=tuple(attachment_paths),
             )
         except Exception:
             self._restore_snapshots(snapshots)
             raise
-
-    def _commit_written_path(self, resolved_path: Path) -> str | None:
-        return self._commit_written_paths([resolved_path])
-
-    def _commit_written_paths(self, resolved_paths: list[Path]) -> str | None:
-        if self.git_repository is None:
-            return None
-        relative_paths = [
-            resolved_path.relative_to(self.paths.root.resolve()).as_posix()
-            for resolved_path in resolved_paths
-        ]
-        return self.git_repository.commit_paths(
-            resolved_paths,
-            f"Update {', '.join(relative_paths)}",
-        )
 
     def _snapshot_commands(self, commands: list[WriteNoteCommand]) -> list[_FileSnapshot]:
         paths: list[Path] = []
