@@ -7,13 +7,11 @@ from common.config import Settings
 from common.model import FrozenModel
 from vault.component.write_queue import VaultWriteQueue
 from vault.entity.vault_path import VaultPaths
-from vault.infrastructure.repository.git_repository import GitRepository
 from vault.infrastructure.repository.vault_note_repository import (
     VaultNoteRepository,
 )
 from vault.service.vault_context_service import VaultContextService
 from vault.service.vault_delete_service import VaultDeleteService
-from vault.service.vault_git_push_service import VaultGitPushService
 from vault.service.vault_inspection_service import VaultInspectionService
 from vault.service.vault_read_service import VaultReadService
 from vault.service.vault_search_service import VaultSearchService
@@ -25,7 +23,6 @@ class Runtime(FrozenModel):
     write_queue: VaultWriteQueue
     read_service: VaultReadService
     write_service: VaultWriteService
-    git_push_service: VaultGitPushService
     delete_service: VaultDeleteService
     search_service: VaultSearchService
     context_service: VaultContextService
@@ -49,7 +46,6 @@ class RuntimeRegistry:
     def _create(self, vault_root: Path) -> Runtime:
         write_queue = VaultWriteQueue()
         note_repository = VaultNoteRepository(root=vault_root)
-        git_repository = GitRepository(root=vault_root)
         paths = VaultPaths(root=vault_root)
         read_service = VaultReadService(paths=paths)
         write_service = VaultWriteService(
@@ -57,7 +53,6 @@ class RuntimeRegistry:
             queue=write_queue,
             actor="llm-wiki",
         )
-        git_push_service = VaultGitPushService(repository=git_repository, queue=write_queue)
         delete_service = VaultDeleteService(
             paths=paths,
             note_repository=note_repository,
@@ -71,7 +66,6 @@ class RuntimeRegistry:
             write_queue=write_queue,
             read_service=read_service,
             write_service=write_service,
-            git_push_service=git_push_service,
             delete_service=delete_service,
             search_service=search_service,
             context_service=context_service,

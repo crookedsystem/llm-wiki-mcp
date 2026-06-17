@@ -2,7 +2,7 @@
 
 [English](README.md) | [한국어](README.ko.md) | [中文](README.zh.md) | [日本語](README.ja.md)
 
-MCP server for a Git-backed Obsidian/Markdown LLM Wiki vault.
+MCP server for an Obsidian/Markdown LLM Wiki vault.
 
 ## Current capabilities
 
@@ -13,14 +13,12 @@ MCP server for a Git-backed Obsidian/Markdown LLM Wiki vault.
 - Serialized writes through one `WriteQueue`
 - `if_hash` optimistic concurrency for updates
 - File rollback for `atomic=True` batch writes
-- Source hash, content hash, and optional git commit hash in write results
+- Source hash and content hash in write results
 - Provenance trailer on written notes
 - REST `GET /metrics` endpoint combining vault and graph counters
 - LLM Wiki Markdown search through the `kb_search_notes` MCP tool
 - Safe full-note update flow through `kb_read_note` + `kb_write_note(if_hash=...)`
 - Explicit-confirmation note deletion through the `kb_delete_note` MCP tool
-- Manual vault commit/push through the `kb_push_vault` MCP tool
-- Optional background vault push every random 30-60 minutes when `KB_GITHUB_PUSH_ENABLED=true`
 
 ## How to Start
 
@@ -38,7 +36,6 @@ KB_VAULT_PATH=/home/alice/Obsidian/LLM Wiki
 KB_HOST=127.0.0.1
 KB_PORT=9999
 KB_MCP_PATH=/mcp
-KB_GITHUB_PUSH_ENABLED=false
 ```
 
 `KB_VAULT_PATH` is the vault root that holds your actual Markdown knowledge documents. It must point at the folder that contains `SCHEMA.md`, `index.md`, and `log.md` — not at `llm-wiki/src` or an Obsidian `.obsidian/` settings folder.
@@ -65,19 +62,7 @@ For Obsidian, no separate connector is needed — just **Open folder as vault** 
 uv run llm-wiki
 ```
 
-The default endpoint is `http://127.0.0.1:9999/mcp`. Once the server is up you can check its status with `GET /health`, and the MCP tools expose `kb_read_note`, `kb_search_notes`, `kb_write_note`, `kb_delete_note`, and `kb_push_vault`. Vault/graph counters are available through the REST `GET /metrics` endpoint.
-
-### Push the vault to GitHub
-
-`kb_push_vault` commits all pending changes in `KB_VAULT_PATH` using the UTC commit message format `YYYY-MM-DD HH:MM - vault sync`, then pushes `origin` to the current branch. The server checks GitHub CLI auth first; the actual transfer uses `git push`, and it falls back to plain `git push` when `gh` is unavailable or unauthenticated.
-
-Use this environment variable to enable scheduled push:
-
-```env
-KB_GITHUB_PUSH_ENABLED=false
-```
-
-When `KB_GITHUB_PUSH_ENABLED=true`, the server starts a background scheduler during app lifespan and runs `kb_push_vault` at a random interval between 30 minutes and 1 hour. Keep it disabled for private vaults unless the `origin` remote is safe to publish to.
+The default endpoint is `http://127.0.0.1:9999/mcp`. Once the server is up you can check its status with `GET /health`, and the MCP tools expose `kb_read_note`, `kb_search_notes`, `kb_write_note`, `kb_delete_note`, and `kb_context`. Vault/graph counters are available through the REST `GET /metrics` endpoint.
 
 ### Hook setup
 
@@ -89,7 +74,7 @@ uv run python scripts/main.py --agent claude  # install a specific agent only
 uv run python scripts/main.py --agent codex --server-url http://127.0.0.1:9999/mcp
 ```
 
-`scripts/main.py` reads `.env` and shell export values to install the `llm-wiki` and `llm-wiki-push` skills, MCP config, and hook commands. If the same server name already exists, setup refreshes it with the resolved MCP URL.
+`scripts/main.py` reads `.env` and shell export values to install the `llm-wiki` skill, MCP config, and hook commands. If the same server name already exists, setup refreshes it with the resolved MCP URL.
 
 By default, setup installs the prompt-time context hook first. When hook installation is enabled, it warns about the Stop hook and asks for uppercase `Y` or `N`: `Y` installs the Stop hook, `N` continues with only the context hook, invalid input repeats the prompt, and non-interactive stdin/EOF aborts before installation. `--dry-run` skips this interactive prompt and does not include the Stop hook in the dry-run plan.
 
@@ -115,12 +100,11 @@ The skill instructs the agent to:
 - Treat `kb_search_notes` as snippet search rather than full file reads. Existing-note updates use `kb_read_note` to retrieve the full structured body and `content_hash`, then `kb_write_note` with that hash as `if_hash`
 - Write complete Markdown notes through `kb_write_note`
 - Preview destructive deletion with `kb_delete_note(dry_run=true)` first. Actual deletion requires an explicit user request and the exact returned `confirmation_phrase`; referencing pages are not deleted, and approved `reference_cleanup_paths` only remove wikilinks to the deleted note.
-- Use `$llm-wiki-push` for explicit GitHub vault sync requests. The main `llm-wiki` skill must not call `kb_push_vault`
 - Use the returned `content_hash` as the next `if_hash` for optimistic concurrency
 - Keep raw sources immutable, update `index.md` when navigation changes, and let the writer append `log.md` automatically for durable wiki changes
 - Use the installed hook commands together with native hooks, plugins, or wrappers: load compact wiki context at user-input time and, when selected during setup, run a stop-time update pass when the agent finishes. Claude Code and Codex share the same `UserPromptSubmit`/`Stop` hook schema (in-loop `decision=block` re-prompt), so setup can wire them when selected. Hermes/Hermess exposes only finalize-style session hooks, so it gets reusable scripts to wire into a plugin/wrapper or finalize hook for an out-of-loop update pass.
 
-The MCP tools the server currently exposes are `kb_read_note`, `kb_write_note`, `kb_delete_note`, `kb_search_notes`, `kb_context`, and `kb_push_vault`. Vault/graph counters are provided through the REST `GET /metrics` endpoint.
+The MCP tools the server currently exposes are `kb_read_note`, `kb_write_note`, `kb_delete_note`, `kb_search_notes`, and `kb_context`. Vault/graph counters are provided through the REST `GET /metrics` endpoint.
 
 ## Vault Structure
 

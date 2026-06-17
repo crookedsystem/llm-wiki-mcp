@@ -91,12 +91,6 @@ class WriteNoteAttachment(FrozenModel):
     def decoded_bytes(self) -> bytes:
         return base64.b64decode(self.data_base64, validate=True)
 
-    def markdown_link(self) -> str:
-        label = Path(self.path).name
-        if self.mime_type.startswith("image/"):
-            return f"![{label}]({self.path})"
-        return f"[{label}]({self.path})"
-
 
 class WriteNoteCommand(FrozenModel):
     note_path: str | Path
@@ -186,6 +180,16 @@ class WriteNoteCommand(FrozenModel):
         attachment_paths = [attachment.path for attachment in self.attachments]
         if len(set(attachment_paths)) != len(attachment_paths):
             raise ValueError("attachment paths must be unique")
+        unreferenced_paths = [
+            attachment.path
+            for attachment in self.attachments
+            if not _body_references_attachment(self.body, attachment.path)
+        ]
+        if unreferenced_paths:
+            raise ValueError(
+                "attachment paths must be referenced in body: "
+                + ", ".join(unreferenced_paths)
+            )
         return self
 
 
@@ -199,6 +203,10 @@ def _allowed_types_for_path(note_path: Path) -> frozenset[WikiNoteType] | None:
 
 def _contains_parent_segment(note_path: Path) -> bool:
     return ".." in note_path.parts
+
+
+def _body_references_attachment(body: str, attachment_path: str) -> bool:
+    return f"({attachment_path})" in body or f"[[{attachment_path}]]" in body
 
 
 def _has_line_separator(value: str) -> bool:

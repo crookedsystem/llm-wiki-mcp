@@ -15,6 +15,5 @@ class Settings(BaseSettings):
     mcp_path: str = "/mcp"
     log_level: LogLevel = "info"
     vault_path: Path = Path("./vault")
-    github_push_enabled: bool = False
 
     model_config = SettingsConfigDict(env_prefix="KB_", env_file=".env", extra="ignore")

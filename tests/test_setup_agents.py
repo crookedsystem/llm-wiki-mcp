@@ -36,13 +36,12 @@ class _CommandResult:
 
 def _repo_with_skills(tmp_path: Path) -> Path:
     repo_root = tmp_path / "repo"
-    for skill_name in ("llm-wiki", "llm-wiki-push"):
-        skill_dir = repo_root / "skills" / skill_name
-        skill_dir.mkdir(parents=True)
-        (skill_dir / "SKILL.md").write_text(
-            f"---\nname: {skill_name}\ndescription: test\n---\n",
-            encoding="utf-8",
-        )
+    skill_dir = repo_root / "skills" / "llm-wiki"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: llm-wiki\ndescription: test\n---\n",
+        encoding="utf-8",
+    )
     return repo_root
 
 
@@ -249,16 +248,11 @@ def test_setup_cli는_agent_옵션으로_일부_agent만_설치한다(
     assert installed_agents == ["codex", "claude"]
 
 
-def test_install_codex는_llm_wiki와_push_skill을_함께_설치한다(tmp_path: Path) -> None:
+def test_install_codex는_llm_wiki_skill을_설치한다(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     (repo_root / "skills" / "llm-wiki").mkdir(parents=True)
     (repo_root / "skills" / "llm-wiki" / "SKILL.md").write_text(
         "---\nname: llm-wiki\ndescription: test\n---\n",
-        encoding="utf-8",
-    )
-    (repo_root / "skills" / "llm-wiki-push").mkdir(parents=True)
-    (repo_root / "skills" / "llm-wiki-push" / "SKILL.md").write_text(
-        "---\nname: llm-wiki-push\ndescription: test\n---\n",
         encoding="utf-8",
     )
     env_file = tmp_path / ".env"
@@ -275,7 +269,6 @@ def test_install_codex는_llm_wiki와_push_skill을_함께_설치한다(tmp_path
 
     assert result == 0
     assert (tmp_path / "codex" / "skills" / "llm-wiki" / "SKILL.md").exists()
-    assert (tmp_path / "codex" / "skills" / "llm-wiki-push" / "SKILL.md").exists()
 
 
 def test_install_claude는_기존_mcp_server를_삭제하고_다시_추가한다(

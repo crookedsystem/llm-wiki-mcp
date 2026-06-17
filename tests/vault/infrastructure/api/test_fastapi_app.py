@@ -79,14 +79,13 @@ def test_fastapi_app은_tools_endpoint에서_mcp_tool_schema를_문서화한다(
     delete_note = next(tool for tool in tools if tool["name"] == "kb_delete_note")
     search_notes = next(tool for tool in tools if tool["name"] == "kb_search_notes")
     context = next(tool for tool in tools if tool["name"] == "kb_context")
-    push_vault = next(tool for tool in tools if tool["name"] == "kb_push_vault")
     assert "Read a complete existing Markdown wiki note" in read_note["description"]
     assert "structured fields" in write_note["description"]
     assert "base64-encoded image or file payloads" in write_note["description"]
+    assert "referenced naturally in body" in write_note["description"]
     assert "Actual deletion requires dry_run=false" in delete_note["description"]
     assert "Search Markdown notes" in search_notes["description"]
     assert "wiki link context map" in context["description"]
-    assert "push origin to the current branch" in push_vault["description"]
     assert read_note["inputSchema"]["required"] == ["note_path"]
     assert read_note["inputSchema"]["properties"]["note_path"]["type"] == "string"
     assert read_note["outputSchema"]["type"] == "object"
@@ -147,30 +146,13 @@ def test_fastapi_app은_tools_endpoint에서_mcp_tool_schema를_문서화한다(
     assert context["inputSchema"]["properties"]["query"]["type"] == "string"
     assert context["inputSchema"]["properties"]["mode"]["default"] == "prompt"
     assert context["outputSchema"]["type"] == "object"
-    assert push_vault["inputSchema"]["properties"] == {}
-    assert push_vault["outputSchema"]["type"] == "object"
     assert {tool["name"] for tool in tools} == {
         "kb_read_note",
         "kb_write_note",
         "kb_delete_note",
         "kb_search_notes",
         "kb_context",
-        "kb_push_vault",
     }
-
-
-def test_fastapi_app은_github_push_enabled일_때_scheduler를_lifespan에서_관리한다(
-    tmp_path: Path,
-) -> None:
-    # Given: GitHub push scheduler가 활성화된 app이 있다.
-    app = create_fastapi_app(Settings(vault_path=tmp_path / "vault", github_push_enabled=True))
-
-    # When: FastAPI lifespan이 시작되고 종료된다.
-    with TestClient(app, base_url="http://127.0.0.1:9999"):
-        assert app.state.github_push_scheduler.is_running is True
-
-    # Then: lifespan 종료 시 background task도 정리된다.
-    assert app.state.github_push_scheduler.is_running is False
 
 
 def test_fastapi_app은_없는_route를_공통_error_envelope로_응답한다(tmp_path: Path) -> None:

@@ -1,5 +1,3 @@
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from typing import Annotated, cast
 
 from fastapi import Depends, FastAPI, Request
@@ -7,7 +5,6 @@ from mcp.server.fastmcp import FastMCP
 
 from common.config import Settings
 from common.runtime_registry import Runtime, get_runtime
-from vault.component.github_push_scheduler import GithubPushScheduler
 from vault.dto.response.health_response import HealthResponse
 from vault.dto.response.metrics_response import (
     MetricsResponse,
@@ -47,33 +44,19 @@ def create_fastapi_app(settings: Settings) -> FastAPI:
         write_service=runtime.write_service,
         search_service=runtime.search_service,
         context_service=runtime.context_service,
-        git_push_service=runtime.git_push_service,
         delete_service=runtime.delete_service,
     )
     mcp_app = mcp_server.streamable_http_app()
-    github_push_scheduler = GithubPushScheduler(push_service=runtime.git_push_service)
-
-    @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        _ = app
-        async with mcp_server.session_manager.run():
-            if settings.github_push_enabled:
-                github_push_scheduler.start()
-            try:
-                yield
-            finally:
-                await github_push_scheduler.stop()
 
     app = FastAPI(
         title="llm-wiki",
         description="개인 Markdown knowledge base를 MCP와 REST 문서 endpoint로 노출합니다.",
-        lifespan=lifespan,
+        lifespan=lambda app: mcp_server.session_manager.run(),
     )
     register_error_handlers(app)
     app.state.settings = settings
     app.state.runtime = runtime
     app.state.mcp_server = mcp_server
-    app.state.github_push_scheduler = github_push_scheduler
 
     @app.get(
         "/health",

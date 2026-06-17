@@ -9,7 +9,7 @@ from setup_support.config import ResolvedConfig
 from setup_support.hooks import install_agent_hooks
 from setup_support.runner import CommandRunner, copy_directory
 
-SKILL_NAMES = ("llm-wiki", "llm-wiki-push")
+SKILL_NAMES = ("llm-wiki",)
 
 
 def install_agent(config: ResolvedConfig) -> int:
