@@ -8,14 +8,13 @@ from vault.entity.vault_note import (
     PROVENANCE_PREFIX,
     append_provenance_trailer,
     compute_sha256,
+    parse_note,
 )
 from vault.entity.vault_path import VaultPaths
 from vault.error.write_error import WriteConflictError
-from vault.service.command.read_note_command import ReadNoteCommand
 from vault.service.command.write_note_command import WriteNoteCommand
 from vault.service.result.write_note_result import WriteNoteResult
 from vault.service.vault_note_renderer import VaultNoteRenderer
-from vault.service.vault_read_service import VaultReadService
 
 _APPEND_ONLY_LOG_PATH = Path("log.md")
 
@@ -62,17 +61,10 @@ class VaultWriteService(FrozenModel):
                 self._restore_snapshots(snapshots)
             raise
 
-    async def _write_note(
-        self,
-        command: WriteNoteCommand,
-        *,
-        allow_log_write: bool = False,
-        append_audit_log: bool = True,
-        operation: str = "write_note",
-    ) -> WriteNoteResult:
+    async def _write_note(self, command: WriteNoteCommand) -> WriteNoteResult:
         resolved_path = self.paths.resolve_note_path(command.note_path)
         relative_path = resolved_path.relative_to(self.paths.root.resolve())
-        if relative_path == _APPEND_ONLY_LOG_PATH and not allow_log_write:
+        if relative_path == _APPEND_ONLY_LOG_PATH:
             raise WriteConflictError(
                 "log.md is append-only; write the target note and let the writer append "
                 "audit entries"
@@ -81,17 +73,8 @@ class VaultWriteService(FrozenModel):
         action = "update" if resolved_path.exists() else "create"
         self._check_if_hash(resolved_path, command.if_hash)
         attachment_paths = self._resolve_attachment_paths(command)
-        audit_log_command = (
-            self._audit_log_command(command, relative_path=relative_path, action=action)
-            if append_audit_log
-            else None
-        )
-        audit_log_paths = (
-            [self.paths.resolve_note_path(_APPEND_ONLY_LOG_PATH)]
-            if audit_log_command is not None
-            else []
-        )
-        snapshots = self._snapshot_paths([resolved_path, *attachment_paths, *audit_log_paths])
+        log_path = self.paths.resolve_note_path(_APPEND_ONLY_LOG_PATH)
+        snapshots = self._snapshot_paths([resolved_path, *attachment_paths, log_path])
 
         try:
             content = self.note_renderer.render(command)
@@ -99,19 +82,13 @@ class VaultWriteService(FrozenModel):
             final_content = append_provenance_trailer(
                 content,
                 source_hash=source_hash,
-                operation=operation,
+                operation="write_note",
                 actor=self.actor,
             )
             resolved_path.parent.mkdir(parents=True, exist_ok=True)
             resolved_path.write_text(final_content, encoding="utf-8")
             self._write_attachments(command, attachment_paths)
-            if audit_log_command is not None:
-                await self._write_note(
-                    audit_log_command,
-                    allow_log_write=True,
-                    append_audit_log=False,
-                    operation="append_log",
-                )
+            self._append_audit_log(command, relative_path=relative_path, action=action)
             return WriteNoteResult(
                 path=resolved_path,
                 source_hash=source_hash,
@@ -147,66 +124,61 @@ class VaultWriteService(FrozenModel):
             paths.append(self.paths.resolve_note_path(_APPEND_ONLY_LOG_PATH))
         return paths
 
-    def _audit_log_command(
+    def _append_audit_log(
         self,
         source_command: WriteNoteCommand,
         *,
         relative_path: Path,
         action: str,
-    ) -> WriteNoteCommand:
+    ) -> None:
         log_path = self.paths.resolve_note_path(_APPEND_ONLY_LOG_PATH)
         entry = self._audit_log_entry(source_command, relative_path=relative_path, action=action)
+        content = f"{self._log_base_content(log_path, source_command).rstrip()}\n\n{entry}\n"
+        final_content = append_provenance_trailer(
+            content,
+            source_hash=compute_sha256(content),
+            operation="append_log",
+            actor=self.actor,
+        )
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(final_content, encoding="utf-8")
 
-        if log_path.exists():
-            raw_log = log_path.read_text(encoding="utf-8")
-            current_hash = compute_sha256(raw_log)
-            try:
-                current_log = VaultReadService(paths=self.paths).read_note(
-                    ReadNoteCommand(note_path=_APPEND_ONLY_LOG_PATH)
-                )
-            except ValueError:
-                body = f"{self._plain_log_body(raw_log).rstrip()}\n\n{entry}"
-                return WriteNoteCommand(
-                    note_path=_APPEND_ONLY_LOG_PATH,
-                    title="Wiki Log",
-                    type="log",
-                    tags=("llm-wiki", "audit-log"),
-                    sources=(),
-                    body=body,
-                    created=source_command.updated,
-                    updated=source_command.updated,
-                    confidence="high",
-                    contested=False,
-                    if_hash=current_hash,
-                )
+    def _log_base_content(self, log_path: Path, source_command: WriteNoteCommand) -> str:
+        """Return existing log content (without its provenance trailer) to append onto.
 
-            body = f"{current_log.body.rstrip()}\n\n{entry}"
-            return WriteNoteCommand(
-                note_path=_APPEND_ONLY_LOG_PATH,
-                title=current_log.title,
-                type="log",
-                tags=current_log.tags,
-                sources=current_log.sources,
-                body=body,
-                created=current_log.created,
-                updated=max(current_log.updated, source_command.updated),
-                confidence=current_log.confidence,
-                contested=current_log.contested,
-                if_hash=current_hash,
-            )
+        A fresh or plain legacy log is rendered into the structured `Wiki Log` shape; an
+        already-structured log keeps its frontmatter and prior entries verbatim so we only
+        strip the trailer and append the new entry at the end.
+        """
+        if not log_path.exists():
+            return self._render_log(self._initial_log_body(), source_command)
+        raw_log = log_path.read_text(encoding="utf-8")
+        if parse_note(raw_log).frontmatter is None:
+            return self._render_log(self._plain_log_body(raw_log), source_command)
+        return self._strip_trailer(raw_log)
 
-        return WriteNoteCommand(
+    def _render_log(self, body: str, source_command: WriteNoteCommand) -> str:
+        command = WriteNoteCommand(
             note_path=_APPEND_ONLY_LOG_PATH,
             title="Wiki Log",
             type="log",
             tags=("llm-wiki", "audit-log"),
             sources=(),
-            body=f"{self._initial_log_body()}\n\n{entry}",
+            body=body,
             created=source_command.updated,
             updated=source_command.updated,
             confidence="high",
             contested=False,
         )
+        return self.note_renderer.render(command)
+
+    def _strip_trailer(self, raw_log: str) -> str:
+        lines = raw_log.splitlines()
+        while lines and not lines[-1].strip():
+            lines.pop()
+        if lines and lines[-1].startswith(PROVENANCE_PREFIX):
+            lines.pop()
+        return "\n".join(lines)
 
     def _audit_log_entry(
         self,
