@@ -22,6 +22,7 @@ def _write_command(
     tags: tuple[str, ...] = ("agent-memory",),
     sources: tuple[str, ...] = ("raw/articles/source.md",),
     body: str = "## Summary\nBody text",
+    summary: str | None = None,
     if_hash: str | None = None,
 ) -> WriteNoteCommand:
     return WriteNoteCommand(
@@ -33,6 +34,7 @@ def _write_command(
         body=body,
         created=datetime(2026, 6, 12, 9, 30, 45, tzinfo=UTC),
         updated=datetime(2026, 6, 12, 10, 31, 46, tzinfo=UTC),
+        summary=summary,
         confidence="medium",
         contested=False,
         if_hash=if_hash,
@@ -227,3 +229,115 @@ def test_write_command는_parent_segment로_path_type_검증을_우회하지_못
     # 달라질 수 있는 path는 거부된다.
     with pytest.raises(ValidationError, match="parent directory segments"):
         _write_command(note_path=note_path, note_type=note_type)
+
+
+def test_note_작성은_log와_index를_자동으로_쌓는다(tmp_path: Path) -> None:
+    async def exercise_writer() -> None:
+        # Given: 새 vault를 바라보는 writer가 있다.
+        vault = tmp_path / "vault"
+        writer = VaultWriteService(
+            paths=VaultPaths(root=vault), queue=VaultWriteQueue(), actor="tester"
+        )
+
+        # When: concept note 하나를 작성한다.
+        await writer.write_note(_write_command(note_path="concepts/today.md", title="Today"))
+
+        # Then: log.md와 index.md가 자동 생성되고 각각 유효한 provenance 1개를 가진다.
+        log = (vault / "log.md").read_text(encoding="utf-8")
+        index = (vault / "index.md").read_text(encoding="utf-8")
+        assert "## [2026-06-12] create | concepts/today" in log
+        assert "- Created: `concepts/today.md` — Today" in log  # summary 없으면 title fallback
+        assert "## Concepts" in index
+        assert "- [[concepts/today|Today]]" in index
+        assert log.count("<!-- kb-provenance:") == 1
+        assert index.count("<!-- kb-provenance:") == 1
+
+    asyncio.run(exercise_writer())
+
+
+def test_summary는_log와_index_설명으로_쓰인다(tmp_path: Path) -> None:
+    async def exercise_writer() -> None:
+        # Given: 새 vault writer가 있다.
+        vault = tmp_path / "vault"
+        writer = VaultWriteService(
+            paths=VaultPaths(root=vault), queue=VaultWriteQueue(), actor="tester"
+        )
+
+        # When: summary를 함께 넘겨 note를 작성한다.
+        await writer.write_note(
+            _write_command(note_path="concepts/x.md", title="X Title", summary="짧은 설명")
+        )
+
+        # Then: summary가 log bullet과 index 설명에 모두 반영된다.
+        assert "- Created: `concepts/x.md` — 짧은 설명" in (vault / "log.md").read_text(
+            encoding="utf-8"
+        )
+        assert "- [[concepts/x|X Title]] — 짧은 설명" in (vault / "index.md").read_text(
+            encoding="utf-8"
+        )
+
+    asyncio.run(exercise_writer())
+
+
+def test_note_수정은_log를_추가하고_index를_제자리_갱신한다(tmp_path: Path) -> None:
+    async def exercise_writer() -> None:
+        # Given: 이미 작성되어 log/index에 등재된 note가 있다.
+        vault = tmp_path / "vault"
+        writer = VaultWriteService(
+            paths=VaultPaths(root=vault), queue=VaultWriteQueue(), actor="tester"
+        )
+        first = await writer.write_note(
+            _write_command(note_path="concepts/x.md", title="X", summary="first")
+        )
+
+        # When: 같은 note를 현재 hash로 수정한다.
+        await writer.write_note(
+            _write_command(
+                note_path="concepts/x.md", title="X", summary="second", if_hash=first.content_hash
+            )
+        )
+
+        # Then: log는 update entry가 위에 추가되고 index는 한 줄로 제자리 갱신된다.
+        log = (vault / "log.md").read_text(encoding="utf-8")
+        index = (vault / "index.md").read_text(encoding="utf-8")
+        assert log.index("update | concepts/x") < log.index("create | concepts/x")
+        assert "- Updated: `concepts/x.md` — second" in log
+        assert index.count("[[concepts/x|") == 1
+        assert "- [[concepts/x|X]] — second" in index
+        assert "first" not in index
+
+    asyncio.run(exercise_writer())
+
+
+def test_root_운영파일_작성은_log_index를_만들지_않는다(tmp_path: Path) -> None:
+    async def exercise_writer() -> None:
+        # Given: 새 vault writer가 있다.
+        vault = tmp_path / "vault"
+        writer = VaultWriteService(
+            paths=VaultPaths(root=vault), queue=VaultWriteQueue(), actor="tester"
+        )
+
+        # When: 운영 파일(SCHEMA.md)을 직접 작성한다.
+        await writer.write_note(
+            _write_command(note_path="SCHEMA.md", title="Wiki Schema", note_type="schema")
+        )
+
+        # Then: 자기 자신을 log/index에 쌓지 않아 두 파일이 생기지 않는다.
+        assert (vault / "SCHEMA.md").exists()
+        assert not (vault / "log.md").exists()
+        assert not (vault / "index.md").exists()
+
+    asyncio.run(exercise_writer())
+
+
+def test_write_command는_summary의_줄바꿈과_빈값을_거부하고_공백을_정리한다() -> None:
+    # When / Then: 여러 줄 summary는 frontmatter/log/index 줄을 깨뜨릴 수 있어 거부된다.
+    with pytest.raises(ValidationError, match="summary must be a single line"):
+        _write_command(summary="line1\nline2")
+
+    # When / Then: 공백뿐인 summary는 거부된다.
+    with pytest.raises(ValidationError, match="summary must not be empty"):
+        _write_command(summary="   ")
+
+    # When: 앞뒤 공백이 있는 summary를 넘기면 정리된 한 줄 값으로 저장된다.
+    assert _write_command(summary="  trimmed summary  ").summary == "trimmed summary"

@@ -86,3 +86,33 @@ def test_atomic_batch_write는_중간에_실패하면_작성된_파일을_롤백
         assert not new_path.exists()
 
     asyncio.run(exercise_writer())
+
+
+def test_atomic_batch_write_실패는_log와_index도_롤백한다(tmp_path: Path) -> None:
+    async def exercise_writer() -> None:
+        # Given: 한 note가 작성되어 log/index가 만들어진 상태가 있다.
+        vault = tmp_path / "vault"
+        writer = VaultWriteService(
+            paths=VaultPaths(root=vault), queue=VaultWriteQueue(), actor="tester"
+        )
+        await writer.write_note(_write_command("concepts/existing.md", "Existing", "Original"))
+        log_before = (vault / "log.md").read_text(encoding="utf-8")
+        index_before = (vault / "index.md").read_text(encoding="utf-8")
+
+        # When / Then: atomic batch가 중간에 실패한다.
+        with pytest.raises(WriteConflictError, match="stale if_hash"):
+            await writer.batch_write_notes(
+                [
+                    _write_command("concepts/new.md", "New", "New"),
+                    _write_command("concepts/existing.md", "Existing", "Bad", if_hash="stale"),
+                ],
+                atomic=True,
+            )
+
+        # Then: log/index는 batch 이전 내용으로 복원되고 새 note의 흔적은 남지 않는다.
+        assert (vault / "log.md").read_text(encoding="utf-8") == log_before
+        assert (vault / "index.md").read_text(encoding="utf-8") == index_before
+        assert not (vault / "concepts" / "new.md").exists()
+        assert "concepts/new" not in (vault / "log.md").read_text(encoding="utf-8")
+
+    asyncio.run(exercise_writer())

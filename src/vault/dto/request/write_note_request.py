@@ -16,6 +16,7 @@ class WriteNoteRequest(FrozenModel):
     body: str
     created: NoteTimestamp
     updated: NoteTimestamp
+    summary: str | None = None
     confidence: ConfidenceLevel | None = None
     contested: bool | None = None
     if_hash: str | None = None
@@ -30,6 +31,7 @@ class WriteNoteRequest(FrozenModel):
             body=self.body,
             created=self.created,
             updated=self.updated,
+            summary=self.summary,
             confidence=self.confidence,
             contested=self.contested,
             if_hash=self.if_hash,

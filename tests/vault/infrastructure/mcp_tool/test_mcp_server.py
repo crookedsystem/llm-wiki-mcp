@@ -136,7 +136,9 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
             },
         )
         structured_write_result = cast(WriteNoteToolResult, write_result)
-        _, search_result = await server.call_tool("kb_search_notes", {"query": "agent memory"})
+        # "durable context" appears only in the note body, not in the auto-maintained
+        # index.md/log.md (which carry the title), so the note is the sole match.
+        _, search_result = await server.call_tool("kb_search_notes", {"query": "durable context"})
         structured_search_result = cast(SearchToolResult, search_result)
         _, read_result = await server.call_tool(
             "kb_read_note",

@@ -43,6 +43,7 @@ class WriteNoteCommand(FrozenModel):
     body: str = Field(min_length=1)
     created: NoteTimestamp
     updated: NoteTimestamp
+    summary: str | None = None
     confidence: ConfidenceLevel | None = None
     contested: bool | None = None
     if_hash: str | None = None
@@ -55,6 +56,18 @@ class WriteNoteCommand(FrozenModel):
         normalized = value.strip()
         if not normalized:
             raise ValueError("title must not be empty")
+        return normalized
+
+    @field_validator("summary")
+    @classmethod
+    def _validate_summary(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if _has_line_separator(value):
+            raise ValueError("summary must be a single line")
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("summary must not be empty when provided")
         return normalized
 
     @field_validator("tags", "sources", mode="before")
