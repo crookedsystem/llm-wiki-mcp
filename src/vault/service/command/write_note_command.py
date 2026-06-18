@@ -1,5 +1,3 @@
-import base64
-import binascii
 from pathlib import Path
 from typing import Literal, TypeAlias
 
@@ -7,7 +5,6 @@ from pydantic import Field, field_validator, model_validator
 
 from common.model import FrozenModel
 from vault.entity.vault_note import FRONTMATTER_DELIMITER, PROVENANCE_PREFIX
-from vault.entity.vault_path import DEFAULT_DENIED_NAMES
 from vault.service.note_timestamp import NoteTimestamp
 
 WikiNoteType: TypeAlias = Literal[
@@ -37,61 +34,6 @@ _ROOT_FILE_TYPES: dict[str, frozenset[WikiNoteType]] = {
 }
 
 
-class WriteNoteAttachment(FrozenModel):
-    path: str = Field(
-        description="Vault-relative file path to create, for example raw/assets/chart.png"
-    )
-    mime_type: str = Field(description="MIME type for link rendering, for example image/png")
-    data_base64: str = Field(
-        description="Base64-encoded file bytes from an image or upload payload"
-    )
-
-    @field_validator("path")
-    @classmethod
-    def _validate_path(cls, value: str) -> str:
-        if _has_line_separator(value):
-            raise ValueError("attachment path must be a single line")
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("attachment path must not be empty")
-        path = Path(normalized)
-        if path.is_absolute():
-            raise ValueError("attachment path must be relative to the vault")
-        if path.suffix == ".md":
-            raise ValueError("attachment path must not be a markdown note")
-        if _contains_parent_segment(path):
-            raise ValueError("attachment path must not contain parent directory segments")
-        denied_part = next((part for part in path.parts if part in DEFAULT_DENIED_NAMES), None)
-        if denied_part is not None:
-            raise ValueError(f"attachment path uses denied vault directory: {denied_part}")
-        return path.as_posix()
-
-    @field_validator("mime_type")
-    @classmethod
-    def _validate_mime_type(cls, value: str) -> str:
-        if _has_line_separator(value):
-            raise ValueError("attachment mime_type must be a single line")
-        normalized = value.strip().lower()
-        if "/" not in normalized or normalized.startswith("/") or normalized.endswith("/"):
-            raise ValueError("attachment mime_type must be a valid MIME type")
-        return normalized
-
-    @field_validator("data_base64")
-    @classmethod
-    def _validate_data_base64(cls, value: str) -> str:
-        normalized = "".join(value.split())
-        if not normalized:
-            raise ValueError("attachment data_base64 must not be empty")
-        try:
-            base64.b64decode(normalized, validate=True)
-        except (binascii.Error, ValueError) as error:
-            raise ValueError("attachment data_base64 must be valid base64") from error
-        return normalized
-
-    def decoded_bytes(self) -> bytes:
-        return base64.b64decode(self.data_base64, validate=True)
-
-
 class WriteNoteCommand(FrozenModel):
     note_path: str | Path
     title: str = Field(min_length=1)
@@ -104,7 +46,6 @@ class WriteNoteCommand(FrozenModel):
     confidence: ConfidenceLevel | None = None
     contested: bool | None = None
     if_hash: str | None = None
-    attachments: tuple[WriteNoteAttachment, ...] = ()
 
     @field_validator("title")
     @classmethod
@@ -147,20 +88,6 @@ class WriteNoteCommand(FrozenModel):
             raise ValueError("body must not include a top-level heading; title is rendered by tool")
         return normalized
 
-    @field_validator("attachments", mode="before")
-    @classmethod
-    def _validate_attachments(cls, value: object) -> tuple[WriteNoteAttachment, ...]:
-        if value is None:
-            return ()
-        if not isinstance(value, list | tuple):
-            raise ValueError("attachments must be a list")
-        return tuple(
-            item
-            if isinstance(item, WriteNoteAttachment)
-            else WriteNoteAttachment.model_validate(item)
-            for item in value
-        )
-
     @model_validator(mode="after")
     def _validate_contract(self) -> "WriteNoteCommand":
         note_path = Path(self.note_path)
@@ -177,18 +104,6 @@ class WriteNoteCommand(FrozenModel):
             raise ValueError(f"type {self.type!r} is not allowed for note_path; expected {allowed}")
         if self.updated < self.created:
             raise ValueError("updated must be greater than or equal to created")
-        attachment_paths = [attachment.path for attachment in self.attachments]
-        if len(set(attachment_paths)) != len(attachment_paths):
-            raise ValueError("attachment paths must be unique")
-        unreferenced_paths = [
-            attachment.path
-            for attachment in self.attachments
-            if not _body_references_attachment(self.body, attachment.path)
-        ]
-        if unreferenced_paths:
-            raise ValueError(
-                "attachment paths must be referenced in body: " + ", ".join(unreferenced_paths)
-            )
         return self
 
 
@@ -202,10 +117,6 @@ def _allowed_types_for_path(note_path: Path) -> frozenset[WikiNoteType] | None:
 
 def _contains_parent_segment(note_path: Path) -> bool:
     return ".." in note_path.parts
-
-
-def _body_references_attachment(body: str, attachment_path: str) -> bool:
-    return f"({attachment_path})" in body or f"[[{attachment_path}]]" in body
 
 
 def _has_line_separator(value: str) -> bool:

@@ -1,5 +1,4 @@
 import asyncio
-import base64
 from datetime import UTC, date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -13,7 +12,6 @@ from vault.entity.vault_path import VaultPaths
 from vault.error.write_error import WriteConflictError
 from vault.service.command.write_note_command import (
     WikiNoteType,
-    WriteNoteAttachment,
     WriteNoteCommand,
 )
 from vault.service.vault_write_service import VaultWriteService
@@ -28,7 +26,6 @@ def _write_command(
     sources: tuple[str, ...] = ("raw/articles/source.md",),
     body: str = "## Summary\nBody text",
     if_hash: str | None = None,
-    attachments: tuple[WriteNoteAttachment, ...] = (),
 ) -> WriteNoteCommand:
     return WriteNoteCommand(
         note_path=note_path,
@@ -42,7 +39,6 @@ def _write_command(
         confidence="medium",
         contested=False,
         if_hash=if_hash,
-        attachments=attachments,
     )
 
 
@@ -92,42 +88,6 @@ def test_existing_note_수정은_현재_content_hash가_맞을_때만_허용된�
         # Then: stale overwrite 없이 새 본문과 hash가 기록된다.
         assert updated_result.source_hash
         assert "Fresh update" in updated_result.path.read_text(encoding="utf-8")
-
-    asyncio.run(exercise_writer())
-
-
-def test_note_작성은_base64_attachment를_vault_file로_저장하고_링크를_추가한다(
-    tmp_path: Path,
-) -> None:
-    async def exercise_writer() -> None:
-        # Given: base64로 인코딩한 이미지 attachment가 포함된 command가 있다.
-        writer = VaultWriteService(
-            paths=VaultPaths(root=tmp_path / "vault"), queue=VaultWriteQueue(), actor="tester"
-        )
-        attachment = WriteNoteAttachment(
-            path="raw/assets/chart.png",
-            mime_type="image/png",
-            data_base64=base64.b64encode(b"fake image bytes").decode("ascii"),
-        )
-
-        # When: note를 작성한다.
-        result = await writer.write_note(
-            _write_command(
-                body=(
-                    "## Summary\nBody text\n\n"
-                    "차트는 ![chart.png](raw/assets/chart.png)에서 확인한다."
-                ),
-                attachments=(attachment,),
-            )
-        )
-
-        # Then: attachment 파일이 vault 안에 생성되고 note 본문은 입력 흐름을 유지한다.
-        attachment_path = tmp_path / "vault" / "raw" / "assets" / "chart.png"
-        assert attachment_path.read_bytes() == b"fake image bytes"
-        written_content = result.path.read_text(encoding="utf-8")
-        assert "차트는 ![chart.png](raw/assets/chart.png)에서 확인한다." in written_content
-        assert "## Attachments" not in written_content
-        assert result.attachment_paths == (attachment_path.resolve(),)
 
     asyncio.run(exercise_writer())
 
@@ -269,30 +229,3 @@ def test_write_command는_parent_segment로_path_type_검증을_우회하지_못
     # 달라질 수 있는 path는 거부된다.
     with pytest.raises(ValidationError, match="parent directory segments"):
         _write_command(note_path=note_path, note_type=note_type)
-
-
-def test_write_command는_unsafe_attachment_payload를_거부한다() -> None:
-    # When / Then: vault 밖 경로, markdown note 경로, 잘못된 base64 payload는 거부된다.
-    with pytest.raises(ValidationError, match="parent directory segments"):
-        WriteNoteAttachment(path="../chart.png", mime_type="image/png", data_base64="Zm9v")
-
-    with pytest.raises(ValidationError, match="must not be a markdown note"):
-        WriteNoteAttachment(
-            path="raw/assets/chart.md",
-            mime_type="text/markdown",
-            data_base64="Zm9v",
-        )
-
-    with pytest.raises(ValidationError, match="valid base64"):
-        WriteNoteAttachment(path="raw/assets/chart.png", mime_type="image/png", data_base64="???")
-
-
-def test_write_command는_body에서_참조하지_않는_attachment를_거부한다() -> None:
-    attachment = WriteNoteAttachment(
-        path="raw/assets/chart.png",
-        mime_type="image/png",
-        data_base64="Zm9v",
-    )
-
-    with pytest.raises(ValidationError, match="referenced in body"):
-        _write_command(attachments=(attachment,))

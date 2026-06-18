@@ -7,4 +7,3 @@ class WriteNoteResult(FrozenModel):
     path: Path
     source_hash: str
     content_hash: str
-    attachment_paths: tuple[Path, ...] = ()

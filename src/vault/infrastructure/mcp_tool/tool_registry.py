@@ -20,7 +20,6 @@ from vault.service.command.context_command import ContextMode
 from vault.service.command.write_note_command import (
     ConfidenceLevel,
     WikiNoteType,
-    WriteNoteAttachment,
 )
 from vault.service.note_timestamp import NoteTimestamp
 from vault.service.vault_context_service import VaultContextService
@@ -54,12 +53,11 @@ def register_vault_tools(
         description=(
             "Write a Markdown wiki note from structured fields. The tool renders YAML "
             "frontmatter, title heading, body, and provenance inside the configured vault. "
-            "Optional attachments accept base64-encoded image or file payloads and are "
-            "written to vault-relative paths. Each attachment path must already be referenced "
-            "naturally in body as a Markdown or Obsidian link. "
             "created and updated must be UTC ISO datetimes with seconds and trailing Z "
             "(YYYY-MM-DDTHH:MM:SSZ). "
-            "Existing notes require the current content_hash as if_hash."
+            "Existing notes require the current content_hash as if_hash. "
+            "Use the REST attachment endpoint for image/file bytes instead of inline MCP "
+            "base64 payloads."
         )
     )
     async def kb_write_note(
@@ -74,7 +72,6 @@ def register_vault_tools(
         confidence: ConfidenceLevel | None = None,
         contested: bool | None = None,
         if_hash: str | None = None,
-        attachments: list[WriteNoteAttachment] | None = None,
     ) -> WriteNoteResponse:
         request = WriteNoteRequest(
             note_path=note_path,
@@ -88,7 +85,6 @@ def register_vault_tools(
             confidence=confidence,
             contested=contested,
             if_hash=if_hash,
-            attachments=attachments or [],
         )
         result = await write_service.write_note(request.to_command())
         return write_note_response(result)

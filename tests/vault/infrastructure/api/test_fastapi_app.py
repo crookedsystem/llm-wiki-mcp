@@ -1,10 +1,12 @@
-from datetime import datetime
+import asyncio
+from datetime import UTC, datetime
 from pathlib import Path
 
 from starlette.testclient import TestClient
 
 from common.config import Settings
 from vault.infrastructure.api.fastapi_app import create_fastapi_app
+from vault.service.command.write_note_command import WriteNoteCommand
 
 
 def test_fastapi_app은_health_endpoint와_mcp_mount를_함께_노출한다(tmp_path: Path) -> None:
@@ -81,8 +83,7 @@ def test_fastapi_app은_tools_endpoint에서_mcp_tool_schema를_문서화한다(
     context = next(tool for tool in tools if tool["name"] == "kb_context")
     assert "Read a complete existing Markdown wiki note" in read_note["description"]
     assert "structured fields" in write_note["description"]
-    assert "base64-encoded image or file payloads" in write_note["description"]
-    assert "referenced naturally in body" in write_note["description"]
+    assert "REST attachment endpoint" in write_note["description"]
     assert "Actual deletion requires dry_run=false" in delete_note["description"]
     assert "Search Markdown notes" in search_notes["description"]
     assert "wiki link context map" in context["description"]
@@ -118,15 +119,7 @@ def test_fastapi_app은_tools_endpoint에서_mcp_tool_schema를_문서화한다(
     assert write_note["inputSchema"]["properties"]["body"]["type"] == "string"
     assert write_note["inputSchema"]["properties"]["created"]["format"] == "date-time"
     assert write_note["inputSchema"]["properties"]["updated"]["format"] == "date-time"
-    attachment_schema = write_note["inputSchema"]["properties"]["attachments"]
-    assert attachment_schema["default"] is None
-    assert attachment_schema["anyOf"][0]["type"] == "array"
-    attachment_item_ref = attachment_schema["anyOf"][0]["items"]["$ref"]
-    attachment_schema_name = attachment_item_ref.removeprefix("#/$defs/")
-    attachment_properties = write_note["inputSchema"]["$defs"][attachment_schema_name]["properties"]
-    assert attachment_properties["path"]["type"] == "string"
-    assert attachment_properties["mime_type"]["type"] == "string"
-    assert attachment_properties["data_base64"]["type"] == "string"
+    assert "attachments" not in write_note["inputSchema"]["properties"]
     assert (
         write_note["inputSchema"]["properties"]["created"]["pattern"]
         == r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
@@ -153,6 +146,51 @@ def test_fastapi_app은_tools_endpoint에서_mcp_tool_schema를_문서화한다(
         "kb_search_notes",
         "kb_context",
     }
+
+
+def test_fastapi_app은_note_attachment_partial_insert_endpoint를_노출한다(
+    tmp_path: Path,
+) -> None:
+    # Given: 먼저 생성된 note와 현재 content_hash가 있다.
+    vault_root = tmp_path / "vault"
+    app = create_fastapi_app(Settings(vault_path=vault_root))
+    write_result = asyncio.run(
+        app.state.runtime.write_service.write_note(
+            WriteNoteCommand(
+                note_path="concepts/today.md",
+                title="Today",
+                type="concept",
+                tags=("agent-memory",),
+                sources=("raw/articles/source.md",),
+                body="## Summary\nBody text",
+                created=datetime(2026, 6, 12, 9, 30, 45, tzinfo=UTC),
+                updated=datetime(2026, 6, 12, 10, 31, 46, tzinfo=UTC),
+            )
+        )
+    )
+
+    # When: REST endpoint로 이미지 bytes를 업로드한다.
+    with TestClient(app, base_url="http://127.0.0.1:9999") as client:
+        response = client.post(
+            "/notes/concepts/today.md/attachments",
+            params={
+                "filename": "chart.png",
+                "if_hash": write_result.content_hash,
+                "alt_text": "chart",
+            },
+            content=b"image bytes",
+            headers={"content-type": "image/png"},
+        )
+
+    # Then: assets 경로에 파일이 저장되고 note에 link가 부분 삽입된다.
+    assert response.status_code == 200
+    payload = response.json()
+    attachment_path = vault_root / "raw" / "assets" / "concepts" / "today" / "chart.png"
+    note_content = (vault_root / "concepts" / "today.md").read_text(encoding="utf-8")
+    assert attachment_path.read_bytes() == b"image bytes"
+    assert payload["attachment_link"] == "![chart](raw/assets/concepts/today/chart.png)"
+    assert "## Attachments\n![chart](raw/assets/concepts/today/chart.png)" in note_content
+    assert "operation=insert_attachment" in note_content
 
 
 def test_fastapi_app은_없는_route를_공통_error_envelope로_응답한다(tmp_path: Path) -> None:

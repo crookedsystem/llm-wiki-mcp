@@ -1,20 +1,27 @@
 from typing import Annotated, cast
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from mcp.server.fastmcp import FastMCP
 
 from common.config import Settings
 from common.runtime_registry import Runtime, get_runtime
 from vault.dto.response.health_response import HealthResponse
+from vault.dto.response.insert_attachment_response import (
+    InsertAttachmentResponse,
+    insert_attachment_response,
+)
 from vault.dto.response.metrics_response import (
     MetricsResponse,
     metrics_response,
 )
 from vault.dto.response.tool_response import JsonSchema, ToolResponse
+from vault.error.write_error import WriteConflictError
 from vault.infrastructure.api.rest_error_handler import (
     register_error_handlers,
 )
 from vault.infrastructure.mcp_tool.mcp_server import create_mcp_server
+from vault.service.command.insert_attachment_command import InsertAttachmentCommand
+from vault.service.vault_attachment_service import VaultAttachmentService
 from vault.service.vault_inspection_service import VaultInspectionService
 
 
@@ -26,6 +33,12 @@ def get_inspection_service(
     runtime: Annotated[Runtime, Depends(get_app_runtime)],
 ) -> VaultInspectionService:
     return runtime.inspection_service
+
+
+def get_attachment_service(
+    runtime: Annotated[Runtime, Depends(get_app_runtime)],
+) -> VaultAttachmentService:
+    return runtime.attachment_service
 
 
 def get_mcp_server(request: Request) -> FastMCP[object]:
@@ -80,6 +93,47 @@ def create_fastapi_app(settings: Settings) -> FastAPI:
     ) -> MetricsResponse:
         snapshot = inspection_service.inspect_vault().metrics
         return metrics_response(snapshot)
+
+    @app.post(
+        "/notes/{note_path:path}/attachments",
+        response_model=InsertAttachmentResponse,
+        summary="Note image attachment partial insert",
+        description=(
+            "Upload image bytes to raw/assets and insert a Markdown image link into an "
+            "existing note without sending the full note body through MCP."
+        ),
+    )
+    async def insert_attachment(
+        note_path: str,
+        request: Request,
+        attachment_service: Annotated[
+            VaultAttachmentService,
+            Depends(get_attachment_service),
+        ],
+        filename: Annotated[str, Query(min_length=1)],
+        if_hash: Annotated[str, Query(min_length=1)],
+        alt_text: Annotated[str | None, Query()] = None,
+        content_type: Annotated[str, Header(alias="content-type")] = "application/octet-stream",
+    ) -> InsertAttachmentResponse:
+        content = await request.body()
+        try:
+            result = await attachment_service.insert_attachment(
+                InsertAttachmentCommand(
+                    note_path=note_path,
+                    filename=filename,
+                    mime_type=content_type,
+                    content=content,
+                    if_hash=if_hash,
+                    alt_text=alt_text,
+                )
+            )
+        except FileNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except WriteConflictError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        return insert_attachment_response(result)
 
     @app.get(
         "/tools",

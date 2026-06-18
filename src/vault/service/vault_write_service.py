@@ -60,8 +60,7 @@ class VaultWriteService(FrozenModel):
     async def _write_note(self, command: WriteNoteCommand) -> WriteNoteResult:
         resolved_path = self.paths.resolve_note_path(command.note_path)
         self._check_if_hash(resolved_path, command.if_hash)
-        attachment_paths = self._resolve_attachment_paths(command)
-        snapshots = self._snapshot_paths([resolved_path, *attachment_paths])
+        snapshots = self._snapshot_paths([resolved_path])
 
         try:
             content = self.note_renderer.render(command)
@@ -74,12 +73,10 @@ class VaultWriteService(FrozenModel):
             )
             resolved_path.parent.mkdir(parents=True, exist_ok=True)
             resolved_path.write_text(final_content, encoding="utf-8")
-            self._write_attachments(command, attachment_paths)
             return WriteNoteResult(
                 path=resolved_path,
                 source_hash=source_hash,
                 content_hash=compute_sha256(final_content),
-                attachment_paths=tuple(attachment_paths),
             )
         except Exception:
             self._restore_snapshots(snapshots)
@@ -89,7 +86,6 @@ class VaultWriteService(FrozenModel):
         paths: list[Path] = []
         for command in commands:
             paths.append(self.paths.resolve_note_path(command.note_path))
-            paths.extend(self._resolve_attachment_paths(command))
         return self._snapshot_paths(paths)
 
     def _snapshot_paths(self, paths: list[Path]) -> list[_FileSnapshot]:
@@ -120,14 +116,3 @@ class VaultWriteService(FrozenModel):
         current_hash = compute_sha256(resolved_path.read_text(encoding="utf-8"))
         if current_hash != if_hash:
             raise WriteConflictError("stale if_hash does not match current note content")
-
-    def _resolve_attachment_paths(self, command: WriteNoteCommand) -> list[Path]:
-        return [self.paths.resolve_file_path(attachment.path) for attachment in command.attachments]
-
-    def _write_attachments(self, command: WriteNoteCommand, attachment_paths: list[Path]) -> None:
-        for attachment, path in zip(command.attachments, attachment_paths, strict=True):
-            content = attachment.decoded_bytes()
-            if path.exists() and path.read_bytes() != content:
-                raise WriteConflictError(f"attachment already exists: {attachment.path}")
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(content)
