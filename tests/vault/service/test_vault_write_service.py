@@ -309,6 +309,36 @@ def test_note_수정은_log를_추가하고_index를_제자리_갱신한다(tmp_
     asyncio.run(exercise_writer())
 
 
+def test_summary_없는_수정은_기존_index_설명을_보존한다(tmp_path: Path) -> None:
+    async def exercise_writer() -> None:
+        # Given: summary와 함께 작성되어 index에 설명이 등재된 note가 있다.
+        vault = tmp_path / "vault"
+        writer = VaultWriteService(
+            paths=VaultPaths(root=vault), queue=VaultWriteQueue(), actor="tester"
+        )
+        first = await writer.write_note(
+            _write_command(note_path="concepts/x.md", title="X", summary="중요한 한 줄 설명")
+        )
+
+        # When: kb_read_note -> kb_write_note 흐름처럼 summary 없이 본문만 수정한다.
+        await writer.write_note(
+            _write_command(
+                note_path="concepts/x.md",
+                title="X",
+                body="## Summary\nrevised body",
+                summary=None,
+                if_hash=first.content_hash,
+            )
+        )
+
+        # Then: index 설명이 지워지지 않고 그대로 보존된다(중복 없음).
+        index = (vault / "index.md").read_text(encoding="utf-8")
+        assert "- [[concepts/x|X]] — 중요한 한 줄 설명" in index
+        assert index.count("[[concepts/x|") == 1
+
+    asyncio.run(exercise_writer())
+
+
 def test_root_운영파일_작성은_log_index를_만들지_않는다(tmp_path: Path) -> None:
     async def exercise_writer() -> None:
         # Given: 새 vault writer가 있다.

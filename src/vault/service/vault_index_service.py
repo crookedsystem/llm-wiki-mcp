@@ -36,23 +36,49 @@ class VaultIndexService(FrozenModel):
         return OperationalNote.parse(existing)
 
     def _upsert(self, body: str, entry: IndexEntry) -> str:
-        line = _render_line(entry)
         lines = body.split("\n")
-        replaced = _replace_existing(lines, entry.slug, line)
-        result = replaced if replaced is not None else _insert_into_section(lines, entry, line)
+        existing = _existing_entry_index(lines, entry.slug)
+        if existing is None:
+            result = _insert_into_section(lines, entry, _render_line(entry))
+        else:
+            # On a summary-less update, keep the description the entry already had so
+            # a routine kb_read_note -> kb_write_note edit never wipes index.md prose.
+            summary = (
+                entry.summary
+                if entry.summary is not None
+                else _existing_description(lines[existing])
+            )
+            line = _compose_line(entry.slug, entry.title, summary)
+            result = [*lines[:existing], line, *lines[existing + 1 :]]
         return join_body(result)
 
 
 def _render_line(entry: IndexEntry) -> str:
-    link = f"- [[{entry.slug}|{entry.title}]]"
-    return f"{link} — {entry.summary}" if entry.summary else link
+    return _compose_line(entry.slug, entry.title, entry.summary)
 
 
-def _replace_existing(lines: list[str], slug: str, line: str) -> list[str] | None:
-    for index, existing_line in enumerate(lines):
-        if _entry_target(existing_line) == slug:
-            return [*lines[:index], line, *lines[index + 1 :]]
+def _compose_line(slug: str, title: str, summary: str | None) -> str:
+    link = f"- [[{slug}|{title}]]"
+    return f"{link} — {summary}" if summary else link
+
+
+def _existing_entry_index(lines: list[str], slug: str) -> int | None:
+    for index, line in enumerate(lines):
+        if _entry_target(line) == slug:
+            return index
     return None
+
+
+def _existing_description(line: str) -> str | None:
+    """The one-line description already on an index entry, if it has one."""
+    link_close = line.find("]]")
+    if link_close == -1:
+        return None
+    remainder = line[link_close + 2 :]
+    separator = " — "
+    if not remainder.startswith(separator):
+        return None
+    return remainder[len(separator) :].strip() or None
 
 
 def _entry_target(line: str) -> str | None:

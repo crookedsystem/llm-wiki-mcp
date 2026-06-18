@@ -51,6 +51,45 @@ def test_index_service는_같은_slug를_제자리에서_갱신한다() -> None:
     assert "Old summary" not in second
 
 
+def test_index_service는_summary_없이_갱신하면_기존_설명을_보존한다() -> None:
+    # Given: 설명이 달린 항목이 등재된 index가 있다.
+    first = VaultIndexService().upsert_entry(None, _entry(title="Foo", summary="원래 설명"))
+
+    # When: summary 없이(제목만 바꿔) 같은 slug를 갱신한다.
+    second = VaultIndexService().upsert_entry(first, _entry(title="Foo Renamed", summary=None))
+
+    # Then: 제목은 갱신되지만 기존 설명은 사라지지 않고 보존된다.
+    assert "- [[concepts/foo|Foo Renamed]] — 원래 설명" in second
+    assert second.count("[[concepts/foo|") == 1
+
+
+def test_index_service는_새_summary가_있으면_기존_설명을_교체한다() -> None:
+    # Given: 설명이 있는 항목이 있다.
+    first = VaultIndexService().upsert_entry(None, _entry(summary="old summary"))
+
+    # When: 새 summary로 갱신한다.
+    second = VaultIndexService().upsert_entry(first, _entry(summary="new summary"))
+
+    # Then: 명시된 새 summary가 기존 설명을 덮어쓴다.
+    assert "- [[concepts/foo|Foo]] — new summary" in second
+    assert "old summary" not in second
+
+
+def test_index_service는_설명이_없던_항목은_summary_없는_갱신에도_제목만_유지한다() -> None:
+    # Given: 설명 없이 등재된 항목이 있다.
+    first = VaultIndexService().upsert_entry(None, _entry(summary=None))
+
+    # When: summary 없이 다시 갱신한다.
+    second = VaultIndexService().upsert_entry(first, _entry(summary=None))
+
+    # Then: 보존할 설명이 없으므로 제목 링크만 유지된다(중복 없음).
+    entry_line = next(
+        line for line in second.splitlines() if line.startswith("- [[concepts/foo|Foo]]")
+    )
+    assert entry_line == "- [[concepts/foo|Foo]]"
+    assert second.count("[[concepts/foo|") == 1
+
+
 def test_index_service는_기존_섹션_끝에_항목을_추가한다() -> None:
     # Given: Concepts 섹션에 한 항목이 있다.
     first = VaultIndexService().upsert_entry(
