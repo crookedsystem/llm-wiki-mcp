@@ -36,20 +36,26 @@ class VaultIndexService(FrozenModel):
         return OperationalNote.parse(existing)
 
     def _upsert(self, body: str, entry: IndexEntry) -> str:
+        # Split the body into lines, edit one line, then rejoin at the end.
         lines = body.split("\n")
+        # Locate this note's existing entry by slug (None when it isn't indexed yet).
         existing = _existing_entry_index(lines, entry.slug)
         if existing is None:
+            # New note: append a line under its type section.
             result = _insert_into_section(lines, entry, _render_line(entry))
         else:
-            # On a summary-less update, keep the description the entry already had so
-            # a routine kb_read_note -> kb_write_note edit never wipes index.md prose.
+            # Existing note: use the new summary when given, otherwise keep the current
+            # description so a summary-less kb_read_note -> kb_write_note edit never
+            # wipes the index.md prose.
             summary = (
                 entry.summary
                 if entry.summary is not None
                 else _existing_description(lines[existing])
             )
+            # Rebuild just this one line and splice it back, leaving the rest untouched.
             line = _compose_line(entry.slug, entry.title, summary)
             result = [*lines[:existing], line, *lines[existing + 1 :]]
+        # Reassemble the lines into the updated index.md body.
         return join_body(result)
 
 
@@ -83,9 +89,12 @@ def _existing_description(line: str) -> str | None:
 
 def _entry_target(line: str) -> str | None:
     """The slug a list item links to, taken from its first wikilink (its anchor)."""
+    # Only list items can be entries; skip headings, blank lines, and prose.
     if not line.lstrip().startswith(_LIST_ITEM_PREFIX):
         return None
+    # The entry's anchor is its first wikilink (later ones belong to the description).
     links = extract_wiki_links(line)
+    # Compare on the bare slug by dropping any "|alias" and "#anchor".
     return normalize_wiki_target(links[0]) if links else None
 
 
