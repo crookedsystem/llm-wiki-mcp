@@ -55,7 +55,11 @@ def register_vault_tools(
             "frontmatter, title heading, body, and provenance inside the configured vault. "
             "created and updated must be UTC ISO datetimes with seconds and trailing Z "
             "(YYYY-MM-DDTHH:MM:SSZ). "
-            "Existing notes require the current content_hash as if_hash."
+            "Existing notes require the current content_hash as if_hash. "
+            "The tool automatically appends a log.md changelog entry and upserts the index.md "
+            "entry for the note, so do not hand-edit log.md or index.md for normal note writes. "
+            "Pass summary as a one-line description used for those index/log entries; it falls "
+            "back to the title when omitted."
         )
     )
     async def kb_write_note(
@@ -67,6 +71,7 @@ def register_vault_tools(
         body: str,
         created: NoteTimestamp,
         updated: NoteTimestamp,
+        summary: str | None = None,
         confidence: ConfidenceLevel | None = None,
         contested: bool | None = None,
         if_hash: str | None = None,
@@ -80,6 +85,7 @@ def register_vault_tools(
             body=body,
             created=created,
             updated=updated,
+            summary=summary,
             confidence=confidence,
             contested=contested,
             if_hash=if_hash,

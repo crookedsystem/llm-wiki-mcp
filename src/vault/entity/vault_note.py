@@ -43,3 +43,16 @@ def append_provenance_trailer(
         f"{PROVENANCE_PREFIX} source_hash={source_hash}; operation={operation}; actor={actor} -->\n"
     )
     return f"{content_with_newline}{trailer}"
+
+
+def strip_provenance_trailer(content: str) -> str:
+    """Return *content* without its trailing kb-provenance comment, if present.
+
+    The trailer is always the last thing in a written note, so removing from the
+    final ``PROVENANCE_PREFIX`` onward yields the original source content. Note
+    bodies are validated to never contain the prefix, so this never cuts a body.
+    """
+    marker_index = content.rfind(PROVENANCE_PREFIX)
+    if marker_index == -1:
+        return content
+    return content[:marker_index]
