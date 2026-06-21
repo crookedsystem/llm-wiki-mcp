@@ -53,9 +53,10 @@ def register_vault_tools(
         description=(
             "Write a Markdown wiki note from structured fields. The tool renders YAML "
             "frontmatter, title heading, body, and provenance inside the configured vault. "
-            "created and updated must be UTC ISO datetimes with seconds and trailing Z "
-            "(YYYY-MM-DDTHH:MM:SSZ). "
-            "Existing notes require the current content_hash as if_hash. "
+            "updated must be a UTC ISO datetime with seconds and trailing Z "
+            "(YYYY-MM-DDTHH:MM:SSZ). New notes also require created in the same format. "
+            "Existing notes require the current content_hash as if_hash and must omit created "
+            "so the original creation timestamp is preserved. "
             "The tool automatically appends a log.md changelog entry and upserts the index.md "
             "entry for the note, so do not hand-edit log.md or index.md for normal note writes. "
             "Pass summary as a one-line description used for those index/log entries; it falls "
@@ -69,8 +70,8 @@ def register_vault_tools(
         tags: list[str],
         sources: list[str],
         body: str,
-        created: NoteTimestamp,
         updated: NoteTimestamp,
+        created: NoteTimestamp | None = None,
         summary: str | None = None,
         confidence: ConfidenceLevel | None = None,
         contested: bool | None = None,
@@ -83,8 +84,8 @@ def register_vault_tools(
             tags=tags,
             sources=sources,
             body=body,
-            created=created,
             updated=updated,
+            created=created,
             summary=summary,
             confidence=confidence,
             contested=contested,

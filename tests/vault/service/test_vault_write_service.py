@@ -13,6 +13,9 @@ from vault.error.write_error import WriteConflictError
 from vault.service.command.write_note_command import WikiNoteType, WriteNoteCommand
 from vault.service.vault_write_service import VaultWriteService
 
+_DEFAULT_CREATED = datetime(2026, 6, 12, 9, 30, 45, tzinfo=UTC)
+_DEFAULT_UPDATED = datetime(2026, 6, 12, 10, 31, 46, tzinfo=UTC)
+
 
 def _write_command(
     *,
@@ -23,6 +26,8 @@ def _write_command(
     sources: tuple[str, ...] = ("raw/articles/source.md",),
     body: str = "## Summary\nBody text",
     summary: str | None = None,
+    created: Any = _DEFAULT_CREATED,
+    updated: Any = _DEFAULT_UPDATED,
     if_hash: str | None = None,
 ) -> WriteNoteCommand:
     return WriteNoteCommand(
@@ -32,8 +37,8 @@ def _write_command(
         tags=tags,
         sources=sources,
         body=body,
-        created=datetime(2026, 6, 12, 9, 30, 45, tzinfo=UTC),
-        updated=datetime(2026, 6, 12, 10, 31, 46, tzinfo=UTC),
+        created=created,
+        updated=updated,
         summary=summary,
         confidence="medium",
         contested=False,
@@ -80,14 +85,40 @@ def test_existing_note_수정은_현재_content_hash가_맞을_때만_허용된�
         with pytest.raises(WriteConflictError, match="stale if_hash"):
             await writer.write_note(_write_command(body="## Summary\nStale update", if_hash="bad"))
 
+        with pytest.raises(ValueError, match="created must not be provided"):
+            await writer.write_note(
+                _write_command(
+                    body="## Summary\nCreated mutation",
+                    if_hash=first_result.content_hash,
+                )
+            )
+
         # When: 현재 content hash로 note를 수정한다.
         updated_result = await writer.write_note(
-            _write_command(body="## Summary\nFresh update", if_hash=first_result.content_hash)
+            _write_command(
+                body="## Summary\nFresh update",
+                created=None,
+                if_hash=first_result.content_hash,
+            )
         )
 
         # Then: stale overwrite 없이 새 본문과 hash가 기록된다.
         assert updated_result.source_hash
         assert "Fresh update" in updated_result.path.read_text(encoding="utf-8")
+
+    asyncio.run(exercise_writer())
+
+
+def test_새_note_작성은_created를_요구한다(tmp_path: Path) -> None:
+    async def exercise_writer() -> None:
+        # Given: 빈 vault를 바라보는 writer가 있다.
+        writer = VaultWriteService(
+            paths=VaultPaths(root=tmp_path / "vault"), queue=VaultWriteQueue(), actor="tester"
+        )
+
+        # When / Then: 새 note 생성에서 created를 생략하면 거부된다.
+        with pytest.raises(ValueError, match="created is required"):
+            await writer.write_note(_write_command(created=None))
 
     asyncio.run(exercise_writer())
 
@@ -192,6 +223,7 @@ def test_write_command는_created_updated를_UTC_Z_datetime으로_정규화한�
     )
 
     # Then: 두 timestamp 모두 UTC tz-aware로 정규화되어 혼합 awareness 비교가 발생하지 않는다.
+    assert command.created is not None
     assert command.created.tzinfo == UTC
     assert command.updated.tzinfo == UTC
     assert command.created == datetime(2026, 6, 12, 9, 30, 45, tzinfo=UTC)
@@ -293,7 +325,11 @@ def test_note_수정은_log를_추가하고_index를_제자리_갱신한다(tmp_
         # When: 같은 note를 현재 hash로 수정한다.
         await writer.write_note(
             _write_command(
-                note_path="concepts/x.md", title="X", summary="second", if_hash=first.content_hash
+                note_path="concepts/x.md",
+                title="X",
+                summary="second",
+                created=None,
+                if_hash=first.content_hash,
             )
         )
 
@@ -327,6 +363,7 @@ def test_summary_없는_수정은_기존_index_설명을_보존한다(tmp_path: 
                 title="X",
                 body="## Summary\nrevised body",
                 summary=None,
+                created=None,
                 if_hash=first.content_hash,
             )
         )

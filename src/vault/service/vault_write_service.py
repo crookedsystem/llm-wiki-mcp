@@ -1,15 +1,16 @@
+from datetime import datetime
 from pathlib import Path
 
 from pydantic import Field
 
 from common.model import FrozenModel
 from vault.component.write_queue import VaultWriteQueue
-from vault.entity.vault_note import append_provenance_trailer, compute_sha256
+from vault.entity.vault_note import append_provenance_trailer, compute_sha256, parse_note
 from vault.entity.vault_path import VaultPaths
 from vault.error.write_error import WriteConflictError
 from vault.infrastructure.repository.git_repository import GitRepository
 from vault.service.command.write_note_command import WriteNoteCommand
-from vault.service.note_timestamp import format_note_timestamp
+from vault.service.note_timestamp import coerce_note_timestamp_to_utc, format_note_timestamp
 from vault.service.result.write_note_result import WriteNoteResult
 from vault.service.vault_index_service import IndexEntry, VaultIndexService
 from vault.service.vault_log_service import LogEntry, VaultLogService, WriteAction
@@ -79,9 +80,15 @@ class VaultWriteService(FrozenModel):
         self._check_if_hash(resolved_path, command.if_hash)
 
         existed = resolved_path.exists()
-        source_hash, content_hash = self._persist(resolved_path, self.note_renderer.render(command))
+        command_to_render = self._command_for_persist(command, resolved_path, existed=existed)
+        source_hash, content_hash = self._persist(
+            resolved_path, self.note_renderer.render(command_to_render)
+        )
 
-        written_paths = [resolved_path, *self._maintain_graph(command, resolved_path, existed)]
+        written_paths = [
+            resolved_path,
+            *self._maintain_graph(command_to_render, resolved_path, existed),
+        ]
         commit_hash = self._commit_paths(written_paths)
         return WriteNoteResult(
             path=resolved_path,
@@ -206,3 +213,49 @@ class VaultWriteService(FrozenModel):
         current_hash = compute_sha256(resolved_path.read_text(encoding="utf-8"))
         if current_hash != if_hash:
             raise WriteConflictError("stale if_hash does not match current note content")
+
+    def _command_for_persist(
+        self,
+        command: WriteNoteCommand,
+        resolved_path: Path,
+        *,
+        existed: bool,
+    ) -> WriteNoteCommand:
+        if existed:
+            if command.created is not None:
+                raise ValueError(
+                    "created must not be provided when updating existing notes; "
+                    "omit created to preserve the original creation timestamp"
+                )
+            created = self._existing_created_timestamp(resolved_path)
+            if command.updated < created:
+                raise ValueError("updated must be greater than or equal to created")
+            return command.model_copy(update={"created": created})
+
+        if command.created is None:
+            raise ValueError("created is required when creating a new note")
+        return command
+
+    def _existing_created_timestamp(self, resolved_path: Path) -> datetime:
+        parsed = parse_note(resolved_path.read_text(encoding="utf-8"))
+        if parsed.frontmatter is None:
+            raise ValueError("existing note must include YAML frontmatter")
+        value = _frontmatter_scalar(parsed.frontmatter, "created")
+        return coerce_note_timestamp_to_utc(value, field_name="frontmatter field 'created'")
+
+
+def _frontmatter_scalar(frontmatter: str, key_name: str) -> str:
+    for line in frontmatter.splitlines():
+        key, separator, raw_value = line.partition(":")
+        if separator and key.strip() == key_name:
+            stripped = raw_value.strip()
+            if not stripped:
+                raise ValueError(f"frontmatter field {key_name!r} must be a scalar")
+            return _normalize_scalar(stripped)
+    raise ValueError(f"frontmatter field {key_name!r} is required")
+
+
+def _normalize_scalar(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        value = value[1:-1]
+    return value.replace('\\"', '"').replace("\\\\", "\\")

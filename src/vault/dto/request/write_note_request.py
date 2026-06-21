@@ -14,7 +14,7 @@ class WriteNoteRequest(FrozenModel):
     tags: list[str]
     sources: list[str]
     body: str
-    created: NoteTimestamp
+    created: NoteTimestamp | None = None
     updated: NoteTimestamp
     summary: str | None = None
     confidence: ConfidenceLevel | None = None

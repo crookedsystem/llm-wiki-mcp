@@ -1,6 +1,7 @@
 import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -13,6 +14,9 @@ from vault.service.command.write_note_command import WriteNoteCommand
 from vault.service.vault_read_service import VaultReadService
 from vault.service.vault_write_service import VaultWriteService
 
+_DEFAULT_CREATED = datetime(2026, 6, 12, 9, 30, 45, tzinfo=UTC)
+_DEFAULT_UPDATED = datetime(2026, 6, 12, 10, 31, 46, tzinfo=UTC)
+
 
 def _write_command(
     *,
@@ -22,6 +26,8 @@ def _write_command(
     tags: tuple[str, ...] = ("llm-wiki", "knowledge-base"),
     sources: tuple[str, ...] = (),
     body: str = "## Entities\n- [[entities/existing]] — Existing entity.",
+    created: Any = _DEFAULT_CREATED,
+    updated: Any = _DEFAULT_UPDATED,
     if_hash: str | None = None,
 ) -> WriteNoteCommand:
     return WriteNoteCommand(
@@ -31,8 +37,8 @@ def _write_command(
         tags=tags,
         sources=sources,
         body=body,
-        created=datetime(2026, 6, 12, 9, 30, 45, tzinfo=UTC),
-        updated=datetime(2026, 6, 12, 10, 31, 46, tzinfo=UTC),
+        created=created,
+        updated=updated,
         confidence="medium",
         contested=False,
         if_hash=if_hash,
@@ -72,6 +78,42 @@ def test_read_note는_write_note에_재사용할_structured_fields와_hash를_�
     asyncio.run(exercise_read())
 
 
+def test_read_note는_non_utc_timestamp를_utc_z로_저장한_뒤_반환한다(tmp_path: Path) -> None:
+    # Given: UTC offset timestamp를 가진 legacy note가 있다.
+    vault_root = tmp_path / "vault"
+    note_path = vault_root / "concepts" / "legacy.md"
+    note_path.parent.mkdir(parents=True)
+    note_path.write_text(
+        """---
+title: Legacy
+created: "2026-06-12T18:30:45+09:00"
+updated: "2026-06-12T19:31:46+09:00"
+type: concept
+tags: []
+sources: []
+---
+
+# Legacy
+
+## Summary
+Body
+""",
+        encoding="utf-8",
+    )
+    reader = VaultReadService(paths=VaultPaths(root=vault_root))
+
+    # When: note를 structured field로 읽는다.
+    read_result = reader.read_note(ReadNoteCommand(note_path="concepts/legacy.md"))
+
+    # Then: timestamp는 UTC Z로 파일에 저장되고 반환 hash도 저장 후 내용을 기준으로 한다.
+    normalized = note_path.read_text(encoding="utf-8")
+    assert 'created: "2026-06-12T09:30:45Z"' in normalized
+    assert 'updated: "2026-06-12T10:31:46Z"' in normalized
+    assert read_result.created == datetime(2026, 6, 12, 9, 30, 45, tzinfo=UTC)
+    assert read_result.updated == datetime(2026, 6, 12, 10, 31, 46, tzinfo=UTC)
+    assert read_result.content_hash == compute_sha256(normalized)
+
+
 def test_read후_full_body_patch와_matching_hash로_기존_note를_재작성한다(
     tmp_path: Path,
 ) -> None:
@@ -95,7 +137,6 @@ def test_read후_full_body_patch와_matching_hash로_기존_note를_재작성한
                 tags=read_result.tags,
                 sources=read_result.sources,
                 body=patched_body,
-                created=read_result.created,
                 updated=datetime(2026, 6, 12, 11, 0, 0, tzinfo=UTC),
                 confidence=read_result.confidence,
                 contested=read_result.contested,
@@ -123,11 +164,12 @@ def test_read후_stale_hash로_full_rewrite하면_기존_note를_보존하고_�
         initial_write = await writer.write_note(_write_command())
         read_result = reader.read_note(ReadNoteCommand(note_path="index.md"))
         await writer.write_note(
-            _write_command(
-                body="## Entities\n- [[entities/newer]] — Newer update.",
-                if_hash=initial_write.content_hash,
+                _write_command(
+                    body="## Entities\n- [[entities/newer]] — Newer update.",
+                    created=None,
+                    if_hash=initial_write.content_hash,
+                )
             )
-        )
 
         # When / Then: 오래된 hash로 full rewrite를 시도하면 거부되고 최신 내용은 유지된다.
         with pytest.raises(WriteConflictError, match="stale if_hash"):

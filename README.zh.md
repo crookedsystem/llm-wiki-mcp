@@ -139,7 +139,7 @@ write skill 用 frontmatter 的 `type` 值决定页面归属哪个文件夹。
 
 每个 synthesized 页面都遵循以下规则：
 
-- **Frontmatter:** `title`、`created`、`updated`、`type`、`tags`、`sources` 必填；`created` 和 `updated` 必须是包含秒且以 `Z` 结尾的 UTC ISO datetime（`YYYY-MM-DDTHH:MM:SSZ`）；`confidence`（high/medium/low）与 `contested`（true/false）可选。
+- **Frontmatter:** `title`、`created`、`updated`、`type`、`tags`、`sources` 必填；`created` 和 `updated` 会以包含秒且以 `Z` 结尾的 UTC ISO datetime 保存（`YYYY-MM-DDTHH:MM:SSZ`）。只有创建新 note 时才传 `created`；更新已有 note 时省略它，以保留原始创建时间。`confidence`（high/medium/low）与 `contested`（true/false）可选。
 - **正文结构:** `# 标题` 之后依次为 `## Summary`、`## Key facts`、`## Relationships`、`## Open questions`、`## Sources`。
 - **路径:** 小写 kebab-case（`concepts/llm-wiki.md`、`entities/anthropic.md`）。
 - **链接:** 页面间使用 `[[wikilinks]]`；新页面尽量有 2 个以上有用的 outbound 链接。
@@ -158,4 +158,4 @@ AI 把 vault 当作图，而不只是文本搜索索引。
 5. 优先 confidence 更高、日期更新、source 更多的页面；显式标出低 confidence 或 contested 页面。
 6. 当答案成为可复用的综合时，归档为 `queries/` 或 `comparisons/` 页面并更新 `index.md` 和 `log.md`。
 
-由于 `kb_search_notes` 返回 snippet 而非完整文件，更新已有 note 时应先用 `kb_read_note` 读取完整 body，patch 返回的 body 后再调用 `kb_write_note(if_hash=content_hash)`。仍然禁止只根据 snippet 替换已有 note。
+由于 `kb_search_notes` 返回 snippet 而非完整文件，更新已有 note 时应先用 `kb_read_note` 读取完整 body，patch 返回的 body 后再调用 `kb_write_note(if_hash=content_hash)`，同时传新的 `updated` 并省略 `created`。仍然禁止只根据 snippet 替换已有 note。
