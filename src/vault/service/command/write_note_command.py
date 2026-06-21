@@ -115,6 +115,11 @@ class WriteNoteCommand(FrozenModel):
         if self.type not in allowed_types:
             allowed = ", ".join(sorted(allowed_types))
             raise ValueError(f"type {self.type!r} is not allowed for note_path; expected {allowed}")
+        if self.if_hash is not None and self.created is not None:
+            raise ValueError(
+                "created must not be provided when updating existing notes; "
+                "omit created to preserve the original creation timestamp"
+            )
         if self.created is not None and self.updated < self.created:
             raise ValueError("updated must be greater than or equal to created")
         return self
