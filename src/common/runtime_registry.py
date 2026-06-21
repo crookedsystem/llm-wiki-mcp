@@ -51,7 +51,7 @@ class RuntimeRegistry:
         note_repository = VaultNoteRepository(root=vault_root)
         git_repository = GitRepository(root=vault_root)
         paths = VaultPaths(root=vault_root)
-        read_service = VaultReadService(paths=paths)
+        read_service = VaultReadService(paths=paths, queue=write_queue)
         write_service = VaultWriteService(
             paths=paths,
             queue=write_queue,

@@ -3,11 +3,15 @@ from pathlib import Path
 from typing import cast
 
 from common.model import FrozenModel
+from vault.component.write_queue import VaultWriteQueue
 from vault.entity.vault_note import (
     FRONTMATTER_DELIMITER,
     PROVENANCE_PREFIX,
+    ParsedNote,
+    append_provenance_trailer,
     compute_sha256,
     parse_note,
+    strip_provenance_trailer,
 )
 from vault.entity.vault_path import VaultPaths
 from vault.service.command.read_note_command import ReadNoteCommand
@@ -15,27 +19,29 @@ from vault.service.command.write_note_command import ConfidenceLevel, WikiNoteTy
 from vault.service.note_timestamp import coerce_note_timestamp_to_utc, format_note_timestamp
 from vault.service.result.read_note_result import ReadNoteResult
 
+FrontmatterFields = dict[str, str | bool | tuple[str, ...]]
+
 
 class VaultReadService(FrozenModel):
     paths: VaultPaths
+    queue: VaultWriteQueue | None = None
+    actor: str = "llm-wiki"
+
+    async def read_note_queued(self, command: ReadNoteCommand) -> ReadNoteResult:
+        if self.queue is None:
+            return self.read_note(command)
+
+        async def operation() -> ReadNoteResult:
+            return self.read_note(command)
+
+        return await self.queue.run(operation)
 
     def read_note(self, command: ReadNoteCommand) -> ReadNoteResult:
         resolved_path = self.paths.resolve_note_path(command.note_path)
         if not resolved_path.exists():
             raise FileNotFoundError(f"note not found: {Path(command.note_path).as_posix()}")
 
-        raw_content = resolved_path.read_text(encoding="utf-8")
-        parsed = parse_note(raw_content)
-        if parsed.frontmatter is None:
-            raise ValueError("note must include YAML frontmatter for structured read")
-
-        fields = _parse_frontmatter(parsed.frontmatter)
-        raw_content, fields = _rewrite_non_utc_timestamps(
-            raw_content=raw_content,
-            frontmatter=parsed.frontmatter,
-            fields=fields,
-            note_path=resolved_path,
-        )
+        raw_content, parsed, fields = self._read_normalized_content(resolved_path)
         title = _required_scalar(fields, "title")
         body = _strip_rendered_title_and_provenance(parsed.body, title)
         return ReadNoteResult(
@@ -52,8 +58,34 @@ class VaultReadService(FrozenModel):
             content_hash=compute_sha256(raw_content),
         )
 
+    def _read_normalized_content(
+        self,
+        resolved_path: Path,
+    ) -> tuple[str, ParsedNote, FrontmatterFields]:
+        for _ in range(3):
+            raw_content = resolved_path.read_text(encoding="utf-8")
+            parsed = parse_note(raw_content)
+            if parsed.frontmatter is None:
+                raise ValueError("note must include YAML frontmatter for structured read")
 
-FrontmatterFields = dict[str, str | bool | tuple[str, ...]]
+            fields = _parse_frontmatter(parsed.frontmatter)
+            normalized_content, normalized_fields = _normalize_non_utc_timestamps(
+                raw_content=raw_content,
+                frontmatter=parsed.frontmatter,
+                fields=fields,
+                actor=self.actor,
+            )
+            if normalized_content == raw_content:
+                return raw_content, parsed, fields
+
+            current_content = resolved_path.read_text(encoding="utf-8")
+            if current_content != raw_content:
+                continue
+
+            resolved_path.write_text(normalized_content, encoding="utf-8")
+            return normalized_content, parse_note(normalized_content), normalized_fields
+
+        raise ValueError("note changed while normalizing timestamps; retry read")
 
 
 def _parse_frontmatter(frontmatter: str) -> FrontmatterFields:
@@ -148,12 +180,12 @@ def _required_timestamp(fields: FrontmatterFields, key: str) -> datetime:
         raise ValueError(f"frontmatter field {key!r} must be a UTC-compatible timestamp") from error
 
 
-def _rewrite_non_utc_timestamps(
+def _normalize_non_utc_timestamps(
     *,
     raw_content: str,
     frontmatter: str,
     fields: FrontmatterFields,
-    note_path: Path,
+    actor: str,
 ) -> tuple[str, FrontmatterFields]:
     replacements: dict[str, str] = {}
     for key in ("created", "updated"):
@@ -167,10 +199,32 @@ def _rewrite_non_utc_timestamps(
 
     normalized_frontmatter = _replace_frontmatter_scalars(frontmatter, replacements)
     normalized_content = _replace_frontmatter(raw_content, normalized_frontmatter)
-    note_path.write_text(normalized_content, encoding="utf-8")
+    normalized_content = _replace_provenance_trailer(
+        original_content=raw_content,
+        normalized_content=normalized_content,
+        actor=actor,
+    )
     normalized_fields = dict(fields)
     normalized_fields.update(replacements)
     return normalized_content, normalized_fields
+
+
+def _replace_provenance_trailer(
+    *,
+    original_content: str,
+    normalized_content: str,
+    actor: str,
+) -> str:
+    if PROVENANCE_PREFIX not in original_content:
+        return normalized_content
+
+    source_content = strip_provenance_trailer(normalized_content)
+    return append_provenance_trailer(
+        source_content,
+        source_hash=compute_sha256(source_content),
+        operation="read_note",
+        actor=actor,
+    )
 
 
 def _replace_frontmatter(raw_content: str, frontmatter: str) -> str:

@@ -44,9 +44,9 @@ def register_vault_tools(
             "provenance, and the current content_hash to pass as if_hash to kb_write_note."
         )
     )
-    def kb_read_note(note_path: str) -> ReadNoteResponse:
+    async def kb_read_note(note_path: str) -> ReadNoteResponse:
         request = ReadNoteRequest(note_path=note_path)
-        result = read_service.read_note(request.to_command())
+        result = await read_service.read_note_queued(request.to_command())
         return read_note_response(result)
 
     @server.tool(

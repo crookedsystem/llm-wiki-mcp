@@ -10,9 +10,7 @@ NOTE_TIMESTAMP_UTC_Z_PATTERN = TimeHelper.UTC_TIMESTAMP_Z_PATTERN
 NOTE_TIMESTAMP_ISO_SECONDS_PATTERN: Final[str] = (
     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})?"
 )
-_NOTE_TIMESTAMP_ISO_SECONDS: Final[re.Pattern[str]] = re.compile(
-    NOTE_TIMESTAMP_ISO_SECONDS_PATTERN
-)
+_NOTE_TIMESTAMP_ISO_SECONDS: Final[re.Pattern[str]] = re.compile(NOTE_TIMESTAMP_ISO_SECONDS_PATTERN)
 _NOTE_TIMESTAMP_FIELD_NAME = "created and updated"
 
 

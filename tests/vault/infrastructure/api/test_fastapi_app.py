@@ -119,10 +119,7 @@ def test_fastapi_app은_tools_endpoint에서_mcp_tool_schema를_문서화한다(
     assert created_schema["default"] is None
     assert created_schema["anyOf"][0]["format"] == "date-time"
     assert write_note["inputSchema"]["properties"]["updated"]["format"] == "date-time"
-    assert (
-        created_schema["anyOf"][0]["pattern"]
-        == r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
-    )
+    assert created_schema["anyOf"][0]["pattern"] == r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
     assert (
         write_note["inputSchema"]["properties"]["updated"]["pattern"]
         == r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"

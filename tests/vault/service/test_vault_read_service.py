@@ -114,6 +114,42 @@ Body
     assert read_result.content_hash == compute_sha256(normalized)
 
 
+def test_read_note는_timestamp_정규화시_provenance_hash를_갱신한다(tmp_path: Path) -> None:
+    # Given: provenance trailer가 있는 legacy note가 있다.
+    vault_root = tmp_path / "vault"
+    note_path = vault_root / "concepts" / "legacy.md"
+    note_path.parent.mkdir(parents=True)
+    note_path.write_text(
+        """---
+title: Legacy
+created: "2026-06-12T18:30:45+09:00"
+updated: "2026-06-12T19:31:46+09:00"
+type: concept
+tags: []
+sources: []
+---
+
+# Legacy
+
+## Summary
+Body
+<!-- kb-provenance: source_hash=stale; operation=write_note; actor=tester -->
+""",
+        encoding="utf-8",
+    )
+    reader = VaultReadService(paths=VaultPaths(root=vault_root), actor="tester")
+
+    # When: note를 읽으면서 timestamp를 정규화한다.
+    reader.read_note(ReadNoteCommand(note_path="concepts/legacy.md"))
+
+    # Then: provenance trailer의 source_hash도 정규화된 source content 기준으로 갱신된다.
+    normalized = note_path.read_text(encoding="utf-8")
+    source_content = normalized.split("<!-- kb-provenance:", maxsplit=1)[0]
+    assert f"source_hash={compute_sha256(source_content)}" in normalized
+    assert "source_hash=stale" not in normalized
+    assert "operation=read_note" in normalized
+
+
 def test_read후_full_body_patch와_matching_hash로_기존_note를_재작성한다(
     tmp_path: Path,
 ) -> None:
@@ -164,12 +200,12 @@ def test_read후_stale_hash로_full_rewrite하면_기존_note를_보존하고_�
         initial_write = await writer.write_note(_write_command())
         read_result = reader.read_note(ReadNoteCommand(note_path="index.md"))
         await writer.write_note(
-                _write_command(
-                    body="## Entities\n- [[entities/newer]] — Newer update.",
-                    created=None,
-                    if_hash=initial_write.content_hash,
-                )
+            _write_command(
+                body="## Entities\n- [[entities/newer]] — Newer update.",
+                created=None,
+                if_hash=initial_write.content_hash,
             )
+        )
 
         # When / Then: 오래된 hash로 full rewrite를 시도하면 거부되고 최신 내용은 유지된다.
         with pytest.raises(WriteConflictError, match="stale if_hash"):
