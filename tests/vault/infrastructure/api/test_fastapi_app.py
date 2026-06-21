@@ -97,7 +97,6 @@ def test_fastapi_app은_tools_endpoint에서_mcp_tool_schema를_문서화한다(
         "tags",
         "sources",
         "body",
-        "created",
         "updated",
     }
     assert write_note["inputSchema"]["properties"]["note_path"]["type"] == "string"
@@ -116,12 +115,11 @@ def test_fastapi_app은_tools_endpoint에서_mcp_tool_schema를_문서화한다(
     assert write_note["inputSchema"]["properties"]["tags"]["type"] == "array"
     assert write_note["inputSchema"]["properties"]["sources"]["type"] == "array"
     assert write_note["inputSchema"]["properties"]["body"]["type"] == "string"
-    assert write_note["inputSchema"]["properties"]["created"]["format"] == "date-time"
+    created_schema = write_note["inputSchema"]["properties"]["created"]
+    assert created_schema["default"] is None
+    assert created_schema["anyOf"][0]["format"] == "date-time"
     assert write_note["inputSchema"]["properties"]["updated"]["format"] == "date-time"
-    assert (
-        write_note["inputSchema"]["properties"]["created"]["pattern"]
-        == r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
-    )
+    assert created_schema["anyOf"][0]["pattern"] == r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
     assert (
         write_note["inputSchema"]["properties"]["updated"]["pattern"]
         == r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"

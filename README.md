@@ -156,7 +156,7 @@ The write skill uses the frontmatter `type` value to decide which folder a page 
 
 Every synthesized page follows these rules:
 
-- **Frontmatter:** `title`, `created`, `updated`, `type`, `tags`, `sources` are required; `created` and `updated` must be UTC ISO datetimes with seconds and a trailing `Z` (`YYYY-MM-DDTHH:MM:SSZ`); `confidence` (high/medium/low) and `contested` (true/false) are optional.
+- **Frontmatter:** `title`, `created`, `updated`, `type`, `tags`, `sources` are required; `created` and `updated` are stored as UTC ISO datetimes with seconds and a trailing `Z` (`YYYY-MM-DDTHH:MM:SSZ`); pass `created` only for new-note writes, and omit it for existing-note updates so the original creation time is preserved. `confidence` (high/medium/low) and `contested` (true/false) are optional.
 - **Body shape:** `# Title` followed by `## Summary`, `## Key facts`, `## Relationships`, `## Open questions`, `## Sources`.
 - **Paths:** lowercase kebab-case (`concepts/llm-wiki.md`, `entities/anthropic.md`).
 - **Links:** `[[wikilinks]]` between pages; new pages should have at least two useful outbound links when possible.
@@ -175,4 +175,4 @@ The AI treats the vault as a graph, not just a text-search index.
 5. Prefer pages with higher confidence, newer dates, and multiple sources; surface low-confidence or contested pages explicitly.
 6. When an answer becomes a reusable synthesis, file it as a `queries/` or `comparisons/` page and update `index.md` and `log.md`.
 
-Because `kb_search_notes` returns snippets rather than whole files, existing-note updates use `kb_read_note` first, patch the complete returned body, and then call `kb_write_note` with `if_hash=content_hash`. Snippet-only replacement remains forbidden.
+Because `kb_search_notes` returns snippets rather than whole files, existing-note updates use `kb_read_note` first, patch the complete returned body, and then call `kb_write_note` with `if_hash=content_hash`, a new `updated`, and no `created`. Snippet-only replacement remains forbidden.

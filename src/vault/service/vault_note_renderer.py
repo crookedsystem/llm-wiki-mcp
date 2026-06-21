@@ -11,6 +11,8 @@ class VaultNoteRenderer(FrozenModel):
     """Render a structured write command into Markdown before provenance is appended."""
 
     def render(self, command: WriteNoteCommand) -> str:
+        if command.created is None:
+            raise ValueError("created is required before rendering a note")
         frontmatter = self._render_frontmatter(
             {
                 "title": command.title,

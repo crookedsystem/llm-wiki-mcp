@@ -19,7 +19,7 @@ Do not use it for one-off answers that should not be saved, or when the MCP serv
 
 The main wiki workflow uses these tool names:
 
-- `kb_write_note(note_path, title, type, tags, sources, body, created, updated, summary?, confidence?, contested?, if_hash?)` — write a note inside the configured vault from structured fields. `created` and `updated` must be UTC ISO datetimes with seconds and a trailing `Z` (`YYYY-MM-DDTHH:MM:SSZ`). The server renders YAML frontmatter, the top-level title heading, the body, and provenance. Existing notes require optimistic concurrency. The write also appends a `log.md` changelog entry and upserts the page's `index.md` entry automatically, so you never hand-maintain those two files for note writes. Pass `summary` as the one-line description used for the index entry and log bullet; it falls back to `title` when omitted.
+- `kb_write_note(note_path, title, type, tags, sources, body, updated, created?, summary?, confidence?, contested?, if_hash?)` — write a note inside the configured vault from structured fields. `updated` must be a UTC ISO datetime with seconds and a trailing `Z` (`YYYY-MM-DDTHH:MM:SSZ`); new notes also require `created` in that format. Existing notes require optimistic concurrency with `if_hash` and must omit `created` so the original creation timestamp is preserved. The write also appends a `log.md` changelog entry and upserts the page's `index.md` entry automatically, so you never hand-maintain those two files for note writes. Pass `summary` as the one-line description used for the index entry and log bullet; it falls back to `title` when omitted.
 - `kb_read_note(note_path)` — read a complete existing note as structured fields for safe full-replacement updates. It returns the rendered note's frontmatter fields, body without YAML/title/provenance, and the current `content_hash` to pass as `if_hash` to `kb_write_note`.
 - `kb_delete_note(note_path, reference_cleanup_paths?, dry_run?, confirm?)` — preview or delete a note and optionally clean backlinks from explicitly listed referencing notes. Default `dry_run=true` returns reference-cleanup candidates, evidence, and an exact `confirmation_phrase`. Actual deletion requires `dry_run=false` and `confirm` exactly equal to that phrase. Referencing notes are not deleted; when approved paths are passed in `reference_cleanup_paths`, only wikilinks pointing at `note_path` are removed from those notes.
 - `kb_context(query, mode?, limit?, path_prefix?)` — build a wiki link context map for prompt, prewrite, or stop-hook use. It returns orientation pages, broken wiki links, existing link targets, suggested links, usage guidance, entity guidance, and `followup_search` queries. It intentionally omits score, snippets, and textual evidence.
@@ -158,7 +158,7 @@ contested: false
 ---
 ```
 
-`title`, `created`, `updated`, `type`, `tags`, `sources`, and `body` are required tool arguments. `created` and `updated` must be UTC ISO datetimes with seconds and a trailing `Z`, such as `2026-06-09T14:30:05Z`; date-only, non-UTC, offset, and sub-second values are invalid. When updating an existing note, `updated` must change to the current UTC timestamp; do not preserve the old update timestamp after modifying content, links, or metadata. `confidence` and `contested` are optional but useful. Use `confidence: low` for single-source, speculative, or fast-moving claims. Use `contested: true` when sources conflict and explain the conflict in the body.
+`title`, `updated`, `type`, `tags`, `sources`, and `body` are required tool arguments. `updated` must be a UTC ISO datetime with seconds and a trailing `Z`, such as `2026-06-09T14:30:05Z`; date-only, non-UTC, offset, and sub-second values are invalid. New notes also require `created` in the same format. When updating an existing note, omit `created`, pass `if_hash`, and change `updated` to the current UTC timestamp; do not preserve the old update timestamp after modifying content, links, or metadata. `confidence` and `contested` are optional but useful. Use `confidence: low` for single-source, speculative, or fast-moving claims. Use `contested: true` when sources conflict and explain the conflict in the body.
 
 Path and type must agree:
 
@@ -216,7 +216,7 @@ If `SCHEMA.md` is missing or the user is creating a new vault, create it before 
 - `kb_write_note` adds every synthesized page to `index.md` and appends every durable write to `log.md` automatically.
 
 ## Frontmatter
-Required fields: `title`, `created`, `updated`, `type`, `tags`, `sources`. `created` and `updated` use UTC ISO datetimes with seconds and a trailing `Z` (`YYYY-MM-DDTHH:MM:SSZ`).
+Required frontmatter fields: `title`, `created`, `updated`, `type`, `tags`, `sources`. `created` and `updated` are stored as UTC ISO datetimes with seconds and a trailing `Z` (`YYYY-MM-DDTHH:MM:SSZ`). For existing-note updates, omit `created` from `kb_write_note`; the server preserves the stored value.
 Allowed `type` values: `raw`, `entity`, `concept`, `comparison`, `query`, `summary`, `schema`, `index`, `log`.
 
 ## Tag taxonomy
@@ -295,7 +295,7 @@ Do not hand-author that trailer in the `body` argument unless you are intentiona
 - `kb_write_note` updates `index.md` and appends to `log.md` automatically on every write, so do not hand-edit those files or issue extra writes to maintain them. Pass a one-line `summary` to control how the index entry and log bullet read (it falls back to `title`). The only time you write a root file directly is an intentional `SCHEMA.md`/`index.md`/`log.md` edit, and such root-file writes are deliberately not auto-logged.
 - Use lowercase kebab-case note paths such as `concepts/llm-wiki.md` and `entities/anthropic.md`.
 - Prefer `[[wikilinks]]` between wiki pages. New synthesized pages should have at least two useful outbound links when possible.
-- Preserve YAML frontmatter fields by resubmitting structured arguments: `title`, `created`, `updated`, `type`, `tags`, and `sources`.
+- Preserve YAML frontmatter fields by resubmitting structured arguments: `title`, `updated`, `type`, `tags`, and `sources`. For existing notes, do not resubmit `created`; let the server preserve it from the stored frontmatter.
 
 ## Delete policy
 

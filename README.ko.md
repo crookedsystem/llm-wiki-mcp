@@ -139,7 +139,7 @@ write skill은 frontmatter의 `type` 값으로 페이지가 어느 폴더에 들
 
 모든 synthesized 페이지는 다음 규칙을 따릅니다:
 
-- **Frontmatter:** `title`, `created`, `updated`, `type`, `tags`, `sources`는 필수이며, `created`와 `updated`는 초까지 포함하고 끝에 `Z`가 붙은 UTC ISO datetime이어야 합니다(`YYYY-MM-DDTHH:MM:SSZ`). `confidence`(high/medium/low)와 `contested`(true/false)는 선택.
+- **Frontmatter:** `title`, `created`, `updated`, `type`, `tags`, `sources`는 필수이며, `created`와 `updated`는 초까지 포함하고 끝에 `Z`가 붙은 UTC ISO datetime으로 저장됩니다(`YYYY-MM-DDTHH:MM:SSZ`). `created`는 새 note 작성 때만 보내고, 기존 note 업데이트에서는 원래 생성 시각을 보존하도록 생략합니다. `confidence`(high/medium/low)와 `contested`(true/false)는 선택.
 - **본문 형태:** `# 제목` 다음에 `## Summary`, `## Key facts`, `## Relationships`, `## Open questions`, `## Sources` 순서.
 - **경로:** 소문자 kebab-case (`concepts/llm-wiki.md`, `entities/anthropic.md`).
 - **링크:** 페이지 간에는 `[[wikilinks]]`, 새 페이지는 가능하면 outbound 링크 2개 이상.
@@ -158,4 +158,4 @@ AI는 vault를 텍스트 검색 인덱스가 아니라 그래프로 다룹니다
 5. confidence가 높고, 날짜가 최신이며, 소스가 여러 개인 페이지를 우선하고, 낮은 confidence나 contested 페이지는 명시적으로 드러냅니다.
 6. 답이 재사용 가능한 합성이 되면 `queries/`나 `comparisons/` 페이지로 정리하고 `index.md`·`log.md`를 갱신합니다.
 
-`kb_search_notes`는 전체 파일이 아니라 snippet을 반환하므로, 기존 note 업데이트는 먼저 `kb_read_note`로 전체 body를 읽고, 반환된 body를 patch한 뒤 `kb_write_note`에 `if_hash=content_hash`를 넘깁니다. Snippet만 보고 기존 note를 교체하는 것은 계속 금지합니다.
+`kb_search_notes`는 전체 파일이 아니라 snippet을 반환하므로, 기존 note 업데이트는 먼저 `kb_read_note`로 전체 body를 읽고, 반환된 body를 patch한 뒤 `kb_write_note`에 `if_hash=content_hash`, 새 `updated`를 넘기고 `created`는 생략합니다. Snippet만 보고 기존 note를 교체하는 것은 계속 금지합니다.

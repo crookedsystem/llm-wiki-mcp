@@ -10,12 +10,15 @@ from vault.error.write_error import WriteConflictError
 from vault.service.command.write_note_command import WriteNoteCommand
 from vault.service.vault_write_service import VaultWriteService
 
+_DEFAULT_CREATED = datetime(2026, 6, 12, 9, 30, 45, tzinfo=UTC)
+
 
 def _write_command(
     note_path: str,
     title: str,
     body: str,
     *,
+    created: datetime | None = _DEFAULT_CREATED,
     if_hash: str | None = None,
 ) -> WriteNoteCommand:
     return WriteNoteCommand(
@@ -25,7 +28,7 @@ def _write_command(
         tags=("batch",),
         sources=("raw/articles/source.md",),
         body=f"## Summary\n{body}",
-        created=datetime(2026, 6, 12, 9, 30, 45, tzinfo=UTC),
+        created=created,
         updated=datetime(2026, 6, 12, 10, 31, 46, tzinfo=UTC),
         if_hash=if_hash,
     )
@@ -75,6 +78,7 @@ def test_atomic_batch_write는_중간에_실패하면_작성된_파일을_롤백
                         "concepts/existing.md",
                         "Existing",
                         "Bad update",
+                        created=None,
                         if_hash="stale",
                     ),
                 ],
@@ -104,7 +108,13 @@ def test_atomic_batch_write_실패는_log와_index도_롤백한다(tmp_path: Pat
             await writer.batch_write_notes(
                 [
                     _write_command("concepts/new.md", "New", "New"),
-                    _write_command("concepts/existing.md", "Existing", "Bad", if_hash="stale"),
+                    _write_command(
+                        "concepts/existing.md",
+                        "Existing",
+                        "Bad",
+                        created=None,
+                        if_hash="stale",
+                    ),
                 ],
                 atomic=True,
             )
