@@ -29,10 +29,13 @@ Step 3 — If something qualifies, use the configured llm-wiki MCP server to:
    search `SCHEMA.md`, `index.md`, recent `log.md`, and any affected entity/concept pages;
 2. inspect returned broken_links, link_targets, and suggested_links; if a link needs textual
    evidence, run `kb_search_notes` with the returned followup_search before writing;
-3. write only the durable knowledge identified in Step 1 (summarize — never copy private
+3. strengthen body links: replace bare in-body mentions with verified Obsidian wikilinks
+   (`[[path|label]]`) in summaries, key facts, and relationship prose; tags, sources, titles,
+   or index entries do not create graph edges;
+4. write only the durable knowledge identified in Step 1 (summarize — never copy private
    transcripts wholesale);
-4. update `index.md` and append a compact `log.md` entry for any durable wiki change;
-5. use returned `content_hash` values as `if_hash` when updating existing notes.
+5. update `index.md` and append a compact `log.md` entry for any durable wiki change;
+6. use returned `content_hash` values as `if_hash` when updating existing notes.
 Then stop normally.
 """
 
@@ -63,5 +66,8 @@ CONTEXT_RESULTS_INTRO: Final = "Relevant existing wiki notes from `kb_search_not
 CONTEXT_FOOTER: Final = (
     "Use this as orientation only. For updates, retrieve the full current note body "
     "when available, then resubmit the complete replacement structured fields via "
-    "`kb_write_note` with `if_hash`; do not pass complete Markdown."
+    "`kb_write_note` with `if_hash`; do not pass complete Markdown. "
+    "Strengthen in-body Obsidian wikilinks: replace bare mentions with verified "
+    "[[path|label]] links before writing; tags/sources/titles/index entries do not "
+    "create graph edges."
 )
