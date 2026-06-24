@@ -118,7 +118,7 @@ class WriteNoteCommand(FrozenModel):
         if self.if_hash is not None and self.created is not None:
             raise ValueError(
                 "created must not be provided when updating existing notes; "
-                "omit created to preserve the original creation timestamp"
+                "omit created to preserve the original creation time"
             )
         if self.created is not None and self.updated < self.created:
             raise ValueError("updated must be greater than or equal to created")

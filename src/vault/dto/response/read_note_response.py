@@ -1,6 +1,6 @@
 from typing_extensions import TypedDict
 
-from vault.entity.note_timestamp import format_note_timestamp
+from vault.entity.note_time import format_note_time
 from vault.service.result.read_note_result import ReadNoteResult
 
 
@@ -26,8 +26,8 @@ def read_note_response(result: ReadNoteResult) -> ReadNoteResponse:
         "tags": list(result.tags),
         "sources": list(result.sources),
         "body": result.body,
-        "created": format_note_timestamp(result.created),
-        "updated": format_note_timestamp(result.updated),
+        "created": format_note_time(result.created),
+        "updated": format_note_time(result.updated),
         "confidence": result.confidence,
         "contested": result.contested,
         "content_hash": result.content_hash,

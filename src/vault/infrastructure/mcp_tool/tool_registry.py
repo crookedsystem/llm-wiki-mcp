@@ -2,7 +2,7 @@ from mcp.server.fastmcp import FastMCP
 
 from vault.dto.request.context_request import ContextRequest
 from vault.dto.request.delete_note_request import DeleteNoteRequest
-from vault.dto.request.note_timestamp import NoteTimestamp
+from vault.dto.request.note_time import NoteTime
 from vault.dto.request.read_note_request import ReadNoteRequest
 from vault.dto.request.search_notes_request import SearchNotesRequest
 from vault.dto.request.write_note_request import WriteNoteRequest
@@ -56,7 +56,7 @@ def register_vault_tools(
             "updated must be a UTC ISO datetime with seconds and trailing Z "
             "(YYYY-MM-DDTHH:MM:SSZ). New notes also require created in the same format. "
             "Existing notes require the current content_hash as if_hash and must omit created "
-            "so the original creation timestamp is preserved. "
+            "so the original creation time is preserved. "
             "The tool automatically appends a log.md changelog entry and upserts the index.md "
             "entry for the note, so do not hand-edit log.md or index.md for normal note writes. "
             "Pass summary as a one-line description used for those index/log entries; it falls "
@@ -70,8 +70,8 @@ def register_vault_tools(
         tags: list[str],
         sources: list[str],
         body: str,
-        updated: NoteTimestamp,
-        created: NoteTimestamp | None = None,
+        updated: NoteTime,
+        created: NoteTime | None = None,
         summary: str | None = None,
         confidence: ConfidenceLevel | None = None,
         contested: bool | None = None,

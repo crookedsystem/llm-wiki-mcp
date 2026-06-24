@@ -1,7 +1,7 @@
 from typing import TypeAlias
 
 from common.model import FrozenModel
-from vault.entity.note_timestamp import format_note_timestamp
+from vault.entity.note_time import format_note_time
 from vault.service.command.write_note_command import WriteNoteCommand
 
 FrontmatterValue: TypeAlias = str | bool | tuple[str, ...] | None
@@ -16,8 +16,8 @@ class VaultNoteRenderer(FrozenModel):
         frontmatter = self._render_frontmatter(
             {
                 "title": command.title,
-                "created": format_note_timestamp(command.created),
-                "updated": format_note_timestamp(command.updated),
+                "created": format_note_time(command.created),
+                "updated": format_note_time(command.updated),
                 "type": command.type,
                 "tags": command.tags,
                 "sources": command.sources,

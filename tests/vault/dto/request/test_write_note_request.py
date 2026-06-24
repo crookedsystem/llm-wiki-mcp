@@ -80,7 +80,7 @@ def test_write_note_request는_created_updated의_초단위_UTC_Z_datetime을_�
     error: str,
 ) -> None:
     # When / Then: MCP/DTO boundary에서 date-only, Z 없는 값, offset, 공백 구분,
-    # sub-second timestamp는 service command 생성 전에 거부된다.
+    # sub-second 시간은 service command 생성 전에 거부된다.
     with pytest.raises(ValidationError, match=error):
         _write_request(created=created, updated=updated)
 
@@ -95,7 +95,7 @@ def test_write_note_request는_created_updated의_초단위_UTC_Z_datetime을_�
         ),
     ],
 )
-def test_write_note_request는_created_updated를_UTC_datetime으로_정규화한다(
+def test_write_note_request는_created_updated를_UTC_datetime으로_바꾼다(
     created: Any,
     updated: Any,
 ) -> None:
@@ -103,7 +103,7 @@ def test_write_note_request는_created_updated를_UTC_datetime으로_정규화�
     request = _write_request(created=created, updated=updated)
     command = request.to_command()
 
-    # Then: DTO에서 두 timestamp가 UTC tz-aware datetime으로 정규화된 뒤 command로 전달된다.
+    # Then: DTO에서 두 시간이 UTC tz-aware datetime으로 바뀐 뒤 command로 전달된다.
     assert request.created is not None
     assert request.created.tzinfo == UTC
     assert request.updated.tzinfo == UTC
