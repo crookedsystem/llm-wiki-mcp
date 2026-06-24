@@ -98,7 +98,16 @@ def test_format_context_block은_link_context를_연결후보별로_출력한다
     assert "kb_search_notes query=missing-room-rule" in block
     assert "Create an entity for a named project or service" in block
     assert "prewrite: run kb_search_notes with followup_search" in block
+    assert "Strengthen in-body Obsidian wikilinks" in block
+    assert "replace bare mentions with verified [[path|label]] links" in block
     assert "sample chat service" not in block
+
+
+def test_stop_update_reason_requires_strengthening_body_wikilinks() -> None:
+    normalized_reason = " ".join(STOP_UPDATE_REASON.split())
+
+    assert "replace bare in-body mentions with verified Obsidian wikilinks" in normalized_reason
+    assert "tags, sources, titles, or index entries do not create graph edges" in normalized_reason
 
 
 def test_load_context는_kb_context_실패나_legacy_schema면_search_notes로_fallback한다(

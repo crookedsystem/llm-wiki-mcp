@@ -30,6 +30,20 @@ def test_llm_wiki_skill_embeds_content_modeling_guidance() -> None:
         assert fragment in content
 
 
+def test_llm_wiki_skill_requires_in_body_obsidian_wikilinks() -> None:
+    content = SKILL.read_text(encoding="utf-8")
+
+    required_fragments = [
+        "## Internal wikilink discipline",
+        "replace bare in-body mentions with Obsidian wikilinks",
+        "[[entities/kim-yongseok|김용석]]",
+        "Do not rely on tags, sources, titles, or index entries to create graph edges",
+    ]
+
+    for fragment in required_fragments:
+        assert fragment in content
+
+
 def test_llm_wiki_skill_explains_hash_and_hook_rules() -> None:
     content = SKILL.read_text(encoding="utf-8")
 

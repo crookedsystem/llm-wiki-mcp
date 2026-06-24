@@ -193,6 +193,33 @@ One short paragraph explaining why this page matters.
 
 Every new synthesized page should have at least two useful outbound `[[wikilinks]]` when possible. If two links are impossible because the vault is new, create the most important link now and note in the page body's open questions that back-links should be filled after more pages exist.
 
+## Internal wikilink discipline
+
+Obsidian/Quartz graph edges come from explicit `[[wikilinks]]` inside the note content. Do not rely on tags, sources, titles, or index entries to create graph edges from the current page to an entity/concept page.
+
+Before every `kb_write_note` call for a synthesized page:
+
+1. Use `kb_context` `link_targets`, `suggested_links`, and any verified `kb_search_notes` results as the allowed link target set.
+2. Scan the page body, not only the `## Relationships` section, for durable named people, organizations, products, projects, modules, APIs, and concepts that already have target pages.
+3. Always replace bare in-body mentions with Obsidian wikilinks while preserving the natural surface text with aliases. For example, write `[[entities/kim-yongseok|김용석]]` in the sentence itself instead of leaving a bare `김용석` mention and hoping the entity page, tags, or index will connect it.
+4. Link the first meaningful occurrence in each section; avoid overlinking every repeated occurrence in the same short paragraph.
+5. If a central relationship lacks an existing target, either create the missing page when it meets the page/entity thresholds or leave the text unlinked and record the missing link as an open question. Do not create broken links accidentally.
+6. When updating an existing note only to repair link hygiene, still use `kb_read_note` first, preserve the full body, change only the link text needed, and write with `if_hash`.
+
+Good body text:
+
+```markdown
+[[entities/kim-yongseok|김용석]]은 [[entities/fanmaum-chat-module|Fanmaum Chat Module]]의 채팅 알림 설계에서 CTO 관점의 아키텍처 판단 기준을 제공했다.
+```
+
+Weak body text:
+
+```markdown
+김용석은 Fanmaum Chat Module의 채팅 알림 설계에서 CTO 관점의 아키텍처 판단 기준을 제공했다.
+```
+
+The weak version may look readable, but it does not create the desired page-to-page graph edge.
+
 ## SCHEMA.md bootstrap
 
 If `SCHEMA.md` is missing or the user is creating a new vault, create it before writing topic pages. Do not rely on an external schema that does not exist. Write `SCHEMA.md` itself through `kb_write_note` with `type: schema`, then customize the domain/tags:
