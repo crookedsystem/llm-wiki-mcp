@@ -127,9 +127,7 @@ def _read_text_or_list(value: str) -> str | bool | tuple[str, ...]:
     if value == "[]":
         return ()
     if value.startswith("[") and value.endswith("]"):
-        return tuple(
-            _clean_text(part.strip()) for part in value[1:-1].split(",") if part.strip()
-        )
+        return tuple(_clean_text(part.strip()) for part in value[1:-1].split(",") if part.strip())
     text = _clean_text(value)
     if text == "true":
         return True
@@ -254,8 +252,7 @@ def _replace_frontmatter(file_text: str, frontmatter: str) -> str:
         raise ValueError("note must include YAML frontmatter for structured read")
     body_start = closing_delimiter + len(f"\n{FRONTMATTER_DELIMITER}\n")
     return (
-        f"{FRONTMATTER_DELIMITER}\n{frontmatter}\n"
-        f"{FRONTMATTER_DELIMITER}\n{file_text[body_start:]}"
+        f"{FRONTMATTER_DELIMITER}\n{frontmatter}\n{FRONTMATTER_DELIMITER}\n{file_text[body_start:]}"
     )
 
 

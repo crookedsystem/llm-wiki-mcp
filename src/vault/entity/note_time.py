@@ -5,16 +5,12 @@ from typing import Final
 from common.helper.time_helper import TimeHelper
 
 NOTE_TIME_UTC_Z_PATTERN = TimeHelper.UTC_TIMESTAMP_Z_PATTERN
-NOTE_TIME_TEXT_PATTERN: Final[str] = (
-    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})?"
-)
+NOTE_TIME_TEXT_PATTERN: Final[str] = r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})?"
 OLD_NOTE_TIME_TEXT_PATTERN: Final[str] = (
     r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})?"
 )
 _NOTE_TIME_TEXT: Final[re.Pattern[str]] = re.compile(NOTE_TIME_TEXT_PATTERN)
-_OLD_NOTE_TIME_TEXT: Final[re.Pattern[str]] = re.compile(
-    OLD_NOTE_TIME_TEXT_PATTERN
-)
+_OLD_NOTE_TIME_TEXT: Final[re.Pattern[str]] = re.compile(OLD_NOTE_TIME_TEXT_PATTERN)
 NOTE_TIME_FIELD_NAME = "created and updated"
 
 
