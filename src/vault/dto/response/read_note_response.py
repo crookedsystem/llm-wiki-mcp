@@ -1,6 +1,6 @@
 from typing_extensions import TypedDict
 
-from vault.service.note_timestamp import format_note_timestamp
+from vault.entity.note_timestamp import format_note_timestamp
 from vault.service.result.read_note_result import ReadNoteResult
 
 

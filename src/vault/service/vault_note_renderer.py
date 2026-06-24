@@ -1,8 +1,8 @@
 from typing import TypeAlias
 
 from common.model import FrozenModel
+from vault.entity.note_timestamp import format_note_timestamp
 from vault.service.command.write_note_command import WriteNoteCommand
-from vault.service.note_timestamp import format_note_timestamp
 
 FrontmatterValue: TypeAlias = str | bool | tuple[str, ...] | None
 

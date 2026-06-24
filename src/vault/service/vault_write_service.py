@@ -5,12 +5,12 @@ from pydantic import Field
 
 from common.model import FrozenModel
 from vault.component.write_queue import VaultWriteQueue
+from vault.entity.note_timestamp import coerce_note_timestamp_to_utc, format_note_timestamp
 from vault.entity.vault_note import append_provenance_trailer, compute_sha256, parse_note
 from vault.entity.vault_path import VaultPaths
 from vault.error.write_error import WriteConflictError
 from vault.infrastructure.repository.git_repository import GitRepository
 from vault.service.command.write_note_command import WriteNoteCommand
-from vault.service.note_timestamp import coerce_note_timestamp_to_utc, format_note_timestamp
 from vault.service.result.write_note_result import WriteNoteResult
 from vault.service.vault_index_service import IndexEntry, VaultIndexService
 from vault.service.vault_log_service import LogEntry, VaultLogService, WriteAction

@@ -2,6 +2,7 @@ from mcp.server.fastmcp import FastMCP
 
 from vault.dto.request.context_request import ContextRequest
 from vault.dto.request.delete_note_request import DeleteNoteRequest
+from vault.dto.request.note_timestamp import NoteTimestamp
 from vault.dto.request.read_note_request import ReadNoteRequest
 from vault.dto.request.search_notes_request import SearchNotesRequest
 from vault.dto.request.write_note_request import WriteNoteRequest
@@ -19,7 +20,6 @@ from vault.dto.response.write_note_response import (
 )
 from vault.service.command.context_command import ContextMode
 from vault.service.command.write_note_command import ConfidenceLevel, WikiNoteType
-from vault.service.note_timestamp import NoteTimestamp
 from vault.service.vault_context_service import VaultContextService
 from vault.service.vault_delete_service import VaultDeleteService
 from vault.service.vault_git_push_service import VaultGitPushService

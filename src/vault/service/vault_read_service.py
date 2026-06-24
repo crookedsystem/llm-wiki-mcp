@@ -4,6 +4,12 @@ from typing import cast
 
 from common.model import FrozenModel
 from vault.component.write_queue import VaultWriteQueue
+from vault.entity.note_timestamp import (
+    coerce_legacy_note_timestamp_to_utc,
+    coerce_note_timestamp_to_utc,
+    format_note_timestamp,
+    is_note_timestamp_utc_z,
+)
 from vault.entity.vault_note import (
     FRONTMATTER_DELIMITER,
     PROVENANCE_PREFIX,
@@ -16,12 +22,6 @@ from vault.entity.vault_note import (
 from vault.entity.vault_path import VaultPaths
 from vault.service.command.read_note_command import ReadNoteCommand
 from vault.service.command.write_note_command import ConfidenceLevel, WikiNoteType
-from vault.service.note_timestamp import (
-    coerce_legacy_note_timestamp_to_utc,
-    coerce_note_timestamp_to_utc,
-    format_note_timestamp,
-    is_note_timestamp_utc_z,
-)
 from vault.service.result.read_note_result import ReadNoteResult
 
 FrontmatterFields = dict[str, str | bool | tuple[str, ...]]

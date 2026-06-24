@@ -9,6 +9,7 @@ from pytest import MonkeyPatch
 
 from common.config import Settings
 from common.runtime_registry import create_runtime
+from vault.entity.note_timestamp import NOTE_TIMESTAMP_UTC_Z_PATTERN
 from vault.infrastructure.mcp_tool.mcp_server import create_mcp_server
 
 
@@ -162,6 +163,11 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
             tool_by_name["kb_read_note"].description or ""
         )
         assert "structured fields" in (tool_by_name["kb_write_note"].description or "")
+        write_schema = tool_by_name["kb_write_note"].inputSchema
+        expected_timestamp_pattern = f"^{NOTE_TIMESTAMP_UTC_Z_PATTERN}$"
+        created_schema = write_schema["properties"]["created"]
+        assert created_schema["anyOf"][0]["pattern"] == expected_timestamp_pattern
+        assert write_schema["properties"]["updated"]["pattern"] == expected_timestamp_pattern
         assert "Actual deletion requires dry_run=false" in (
             tool_by_name["kb_delete_note"].description or ""
         )
