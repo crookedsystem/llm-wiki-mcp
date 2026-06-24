@@ -16,7 +16,12 @@ from vault.entity.vault_note import (
 from vault.entity.vault_path import VaultPaths
 from vault.service.command.read_note_command import ReadNoteCommand
 from vault.service.command.write_note_command import ConfidenceLevel, WikiNoteType
-from vault.service.note_timestamp import coerce_note_timestamp_to_utc, format_note_timestamp
+from vault.service.note_timestamp import (
+    coerce_legacy_note_timestamp_to_utc,
+    coerce_note_timestamp_to_utc,
+    format_note_timestamp,
+    is_note_timestamp_utc_z,
+)
 from vault.service.result.read_note_result import ReadNoteResult
 
 FrontmatterFields = dict[str, str | bool | tuple[str, ...]]
@@ -174,10 +179,26 @@ def _string_tuple(fields: FrontmatterFields, key: str) -> tuple[str, ...]:
 
 def _required_timestamp(fields: FrontmatterFields, key: str) -> datetime:
     value = _required_scalar(fields, key)
+    if not is_note_timestamp_utc_z(value):
+        raise ValueError(f"frontmatter field {key!r} must be a UTC-compatible timestamp")
     try:
         return coerce_note_timestamp_to_utc(value, field_name=f"frontmatter field {key!r}")
     except ValueError as error:
         raise ValueError(f"frontmatter field {key!r} must be a UTC-compatible timestamp") from error
+
+
+def _required_or_repaired_timestamp(fields: FrontmatterFields, key: str) -> datetime:
+    try:
+        return _required_timestamp(fields, key)
+    except ValueError as validation_error:
+        value = _required_scalar(fields, key)
+        try:
+            return coerce_legacy_note_timestamp_to_utc(
+                value,
+                field_name=f"frontmatter field {key!r}",
+            )
+        except ValueError as repair_error:
+            raise validation_error from repair_error
 
 
 def _normalize_non_utc_timestamps(
@@ -189,7 +210,7 @@ def _normalize_non_utc_timestamps(
 ) -> tuple[str, FrontmatterFields]:
     replacements: dict[str, str] = {}
     for key in ("created", "updated"):
-        timestamp = _required_timestamp(fields, key)
+        timestamp = _required_or_repaired_timestamp(fields, key)
         formatted = format_note_timestamp(timestamp)
         if _required_scalar(fields, key) != formatted:
             replacements[key] = formatted

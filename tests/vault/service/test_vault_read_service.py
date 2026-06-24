@@ -114,6 +114,44 @@ Body
     assert read_result.content_hash == compute_sha256(normalized)
 
 
+def test_read_note는_legacy_space_timestamp를_utc_z로_저장한_뒤_반환한다(
+    tmp_path: Path,
+) -> None:
+    # Given: UTC-compatible 검증에서 실패하는 공백 구분 legacy timestamp note가 있다.
+    vault_root = tmp_path / "vault"
+    note_path = vault_root / "entities" / "kim-yongseok.md"
+    note_path.parent.mkdir(parents=True)
+    note_path.write_text(
+        """---
+title: 김용석
+created: 2026-06-12 20:05:40
+updated: 2026-06-12 20:05:40
+type: entity
+tags: []
+sources: []
+---
+
+# 김용석
+
+## Summary
+Body
+""",
+        encoding="utf-8",
+    )
+    reader = VaultReadService(paths=VaultPaths(root=vault_root))
+
+    # When: note를 structured field로 읽는다.
+    read_result = reader.read_note(ReadNoteCommand(note_path="entities/kim-yongseok.md"))
+
+    # Then: legacy timestamp는 UTC로 해석되어 UTC Z 포맷으로 저장된다.
+    normalized = note_path.read_text(encoding="utf-8")
+    assert 'created: "2026-06-12T20:05:40Z"' in normalized
+    assert 'updated: "2026-06-12T20:05:40Z"' in normalized
+    assert read_result.created == datetime(2026, 6, 12, 20, 5, 40, tzinfo=UTC)
+    assert read_result.updated == datetime(2026, 6, 12, 20, 5, 40, tzinfo=UTC)
+    assert read_result.content_hash == compute_sha256(normalized)
+
+
 def test_read_note는_timestamp_정규화시_provenance_hash를_갱신한다(tmp_path: Path) -> None:
     # Given: provenance trailer가 있는 legacy note가 있다.
     vault_root = tmp_path / "vault"
