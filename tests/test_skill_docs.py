@@ -64,6 +64,59 @@ def test_llm_wiki_skill_explains_hash_and_hook_rules() -> None:
         assert fragment in content
 
 
+def test_llm_wiki_skill_defines_prompt_time_context_lanes() -> None:
+    content = SKILL.read_text(encoding="utf-8")
+
+    required_fragments = [
+        "### Prompt hints section",
+        "kind: preference_profile",
+        "kind: project_convention",
+        "kind: procedural_pattern",
+        "kind: failure_prevention",
+        "### Prompt-time memory kinds",
+        "### Context-loader retrieval pipeline",
+        "### Stop-hook memory capture",
+        "Treat hook-injected wiki memory as advisory context",
+    ]
+
+    for fragment in required_fragments:
+        assert fragment in content
+
+
+def test_llm_wiki_skill_links_memory_reference_files() -> None:
+    content = SKILL.read_text(encoding="utf-8")
+    references = {
+        "references/memory-taxonomy.md": [
+            "# Memory Taxonomy",
+            "`working_context`",
+            "`preference_profile`",
+            "Retrieval Precedence",
+        ],
+        "references/memory-write-policy.md": [
+            "# Memory Write Policy",
+            "No-Store Rules",
+            "Durability Thresholds",
+            "failure_prevention",
+        ],
+        "references/memory-research-map.md": [
+            "# Memory Research Map",
+            "500 reviewed references",
+            "10 independent research tracks",
+            "Representative References",
+        ],
+    }
+
+    for relative_path, required_fragments in references.items():
+        assert relative_path in content
+
+        reference_path = SKILL.parent / relative_path
+        assert reference_path.exists()
+
+        reference_content = reference_path.read_text(encoding="utf-8")
+        for fragment in required_fragments:
+            assert fragment in reference_content
+
+
 def test_llm_wiki_push_skill_requires_explicit_push_request() -> None:
     content = PUSH_SKILL.read_text(encoding="utf-8")
 
