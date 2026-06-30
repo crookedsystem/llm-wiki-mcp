@@ -69,3 +69,12 @@ def test_log_service는_heading과_intro를_중복으로_쌓지_않는다() -> N
     # Then: Wiki Log 제목과 intro는 한 번씩만 존재한다.
     assert second.count("# Wiki Log") == 1
     assert second.count("Newest entries at top.") == 1
+
+
+def test_log_service는_delete_entry를_쌓는다() -> None:
+    # When: 삭제 entry를 append한다.
+    result = VaultLogService().append_entry(None, _entry(action="delete"))
+
+    # Then: delete action과 삭제 라벨이 log block에 기록된다.
+    assert "## [2026-06-12] delete | concepts/foo" in result
+    assert "- Deleted: `concepts/foo.md` — Foo summary" in result

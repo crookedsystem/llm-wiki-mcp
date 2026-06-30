@@ -163,3 +163,34 @@ def test_index_service는_설명_속_링크가_아니라_항목_앵커로_매칭
     assert "- [[concepts/b|B]] — relates to [[concepts/a|A]]" in result
     assert "- [[concepts/a|A]] — A desc" in result
     assert result.count("## Concepts") == 1
+
+
+def test_index_service는_항목_앵커가_일치하는_slug만_제거한다() -> None:
+    # Given: concepts/a 항목과, 설명에 concepts/a를 언급하는 concepts/b 항목이 있다.
+    first = VaultIndexService().upsert_entry(
+        None,
+        _entry(slug="concepts/a", title="A", summary="A desc"),
+    )
+    second = VaultIndexService().upsert_entry(
+        first,
+        IndexEntry(
+            slug="concepts/b",
+            title="B",
+            summary="relates to [[concepts/a|A]]",
+            section="Concepts",
+            updated="2026-06-12T10:31:46Z",
+        ),
+    )
+
+    # When: concepts/a 항목을 제거한다.
+    result = VaultIndexService().remove_entry(
+        second,
+        slug="concepts/a",
+        updated="2026-06-12T11:00:00Z",
+    )
+
+    # Then: 항목 anchor가 concepts/a인 줄만 제거되고 설명 속 링크는 건드리지 않는다.
+    assert result is not None
+    assert "- [[concepts/a|A]] — A desc" not in result
+    assert "- [[concepts/b|B]] — relates to [[concepts/a|A]]" in result
+    assert 'updated: "2026-06-12T11:00:00Z"' in result

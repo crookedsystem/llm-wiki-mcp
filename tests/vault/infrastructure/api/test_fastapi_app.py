@@ -83,6 +83,7 @@ def test_fastapi_app은_tools_endpoint에서_mcp_tool_schema를_문서화한다(
     assert "Read a complete existing Markdown wiki note" in read_note["description"]
     assert "structured fields" in write_note["description"]
     assert "Actual deletion requires dry_run=false" in delete_note["description"]
+    assert "appends log.md" in delete_note["description"]
     assert "Search Markdown notes" in search_notes["description"]
     assert "wiki link context map" in context["description"]
     assert "push origin to the current branch" in push_vault["description"]

@@ -18,7 +18,7 @@ MCP server for a Git-backed Obsidian/Markdown LLM Wiki vault.
 - REST `GET /metrics` endpoint combining vault and graph counters
 - LLM Wiki Markdown search through the `kb_search_notes` MCP tool
 - Safe full-note update flow through `kb_read_note` + `kb_write_note(if_hash=...)`
-- Explicit-confirmation note deletion through the `kb_delete_note` MCP tool
+- Explicit-confirmation note deletion through the `kb_delete_note` MCP tool with automatic log/index maintenance
 - Manual vault commit/push through the `kb_push_vault` MCP tool
 - Optional background vault push every random 30-60 minutes when `KB_GITHUB_PUSH_ENABLED=true`
 
@@ -126,7 +126,7 @@ The skill instructs the agent to:
 - Initialize a new vault from the skill's built-in schema, page-type, index, log, and provenance guidance when it does not have `SCHEMA.md` yet
 - Treat `kb_search_notes` as snippet search rather than full file reads. Existing-note updates use `kb_read_note` to retrieve the full structured body and `content_hash`, then `kb_write_note` with that hash as `if_hash`
 - Write complete Markdown notes through `kb_write_note`
-- Preview destructive deletion with `kb_delete_note(dry_run=true)` first. Actual deletion requires an explicit user request and the exact returned `confirmation_phrase`; referencing pages are not deleted, and approved `reference_cleanup_paths` only remove wikilinks to the deleted note.
+- Preview destructive deletion with `kb_delete_note(dry_run=true)` first. Actual deletion requires an explicit user request and the exact returned `confirmation_phrase`; referencing pages are not deleted, and approved `reference_cleanup_paths` only remove wikilinks to the deleted note. Actual deletion appends `log.md` and removes the target's `index.md` entry automatically when present.
 - Use `$llm-wiki-push` for explicit GitHub vault sync requests. The main `llm-wiki` skill must not call `kb_push_vault`
 - Use the returned `content_hash` as the next `if_hash` for optimistic concurrency
 - Keep raw sources immutable; durable content writes through `kb_write_note` maintain `index.md` and `log.md` automatically

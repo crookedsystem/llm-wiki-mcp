@@ -101,7 +101,8 @@ def register_vault_tools(
             "evidence, and an exact confirmation_phrase. Actual deletion requires dry_run=false "
             "and confirm equal to that phrase. Referencing pages are never deleted by this tool: "
             "when passed in reference_cleanup_paths, only wikilinks pointing at note_path are "
-            "removed from those pages."
+            "removed from those pages. Actual deletion appends log.md and removes the target's "
+            "index.md entry automatically when present."
         )
     )
     async def kb_delete_note(
