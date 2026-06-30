@@ -9,6 +9,7 @@ from pytest import MonkeyPatch
 
 from common.config import Settings
 from common.runtime_registry import create_runtime
+from vault.entity.note_time import NOTE_TIME_UTC_Z_PATTERN
 from vault.infrastructure.mcp_tool.mcp_server import create_mcp_server
 
 
@@ -162,6 +163,11 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
             tool_by_name["kb_read_note"].description or ""
         )
         assert "structured fields" in (tool_by_name["kb_write_note"].description or "")
+        write_schema = tool_by_name["kb_write_note"].inputSchema
+        expected_time_pattern = f"^{NOTE_TIME_UTC_Z_PATTERN}$"
+        created_schema = write_schema["properties"]["created"]
+        assert created_schema["anyOf"][0]["pattern"] == expected_time_pattern
+        assert write_schema["properties"]["updated"]["pattern"] == expected_time_pattern
         assert "Actual deletion requires dry_run=false" in (
             tool_by_name["kb_delete_note"].description or ""
         )
@@ -391,7 +397,7 @@ def test_mcp_delete_tool은_dry_run_이후_내용이_바뀌면_기존_confirmati
     asyncio.run(exercise_server())
 
 
-def test_mcp_server는_write_timestamp의_초단위_UTC_Z_datetime을_검증한다(
+def test_mcp_server는_write_time의_초단위_UTC_Z_datetime을_검증한다(
     tmp_path: Path,
 ) -> None:
     async def exercise_server() -> None:
@@ -409,7 +415,7 @@ def test_mcp_server는_write_timestamp의_초단위_UTC_Z_datetime을_검증한�
             runtime.delete_service,
         )
 
-        # When / Then: date-only timestamp는 write tool validator에서 거부된다.
+        # When / Then: date-only time는 write tool validator에서 거부된다.
         with pytest.raises(ToolError, match="include time|ISO datetime"):
             await server.call_tool(
                 "kb_write_note",

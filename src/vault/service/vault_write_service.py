@@ -5,12 +5,12 @@ from pydantic import Field
 
 from common.model import FrozenModel
 from vault.component.write_queue import VaultWriteQueue
+from vault.entity.note_time import format_note_time, parse_note_time
 from vault.entity.vault_note import append_provenance_trailer, compute_sha256, parse_note
 from vault.entity.vault_path import VaultPaths
 from vault.error.write_error import WriteConflictError
 from vault.infrastructure.repository.git_repository import GitRepository
 from vault.service.command.write_note_command import WriteNoteCommand
-from vault.service.note_timestamp import coerce_note_timestamp_to_utc, format_note_timestamp
 from vault.service.result.write_note_result import WriteNoteResult
 from vault.service.vault_index_service import IndexEntry, VaultIndexService
 from vault.service.vault_log_service import LogEntry, VaultLogService, WriteAction
@@ -107,7 +107,7 @@ class VaultWriteService(FrozenModel):
         if relative_path in ROOT_OPERATIONAL_FILES:
             return []
 
-        updated = format_note_timestamp(command.updated)
+        updated = format_note_time(command.updated)
         slug = Path(relative_path).with_suffix("").as_posix()
         action: WriteAction = "update" if existed else "create"
 
@@ -225,9 +225,9 @@ class VaultWriteService(FrozenModel):
             if command.created is not None:
                 raise ValueError(
                     "created must not be provided when updating existing notes; "
-                    "omit created to preserve the original creation timestamp"
+                    "omit created to preserve the original creation time"
                 )
-            created = self._existing_created_timestamp(resolved_path)
+            created = self._existing_created_time(resolved_path)
             if command.updated < created:
                 raise ValueError("updated must be greater than or equal to created")
             return command.model_copy(update={"created": created})
@@ -236,26 +236,26 @@ class VaultWriteService(FrozenModel):
             raise ValueError("created is required when creating a new note")
         return command
 
-    def _existing_created_timestamp(self, resolved_path: Path) -> datetime:
+    def _existing_created_time(self, resolved_path: Path) -> datetime:
         parsed = parse_note(resolved_path.read_text(encoding="utf-8"))
         if parsed.frontmatter is None:
             raise ValueError("existing note must include YAML frontmatter")
-        value = _frontmatter_scalar(parsed.frontmatter, "created")
-        return coerce_note_timestamp_to_utc(value, field_name="frontmatter field 'created'")
+        value = _frontmatter_value(parsed.frontmatter, "created")
+        return parse_note_time(value, field_name="frontmatter field 'created'")
 
 
-def _frontmatter_scalar(frontmatter: str, key_name: str) -> str:
+def _frontmatter_value(frontmatter: str, key_name: str) -> str:
     for line in frontmatter.splitlines():
         key, separator, raw_value = line.partition(":")
         if separator and key.strip() == key_name:
             stripped = raw_value.strip()
             if not stripped:
-                raise ValueError(f"frontmatter field {key_name!r} must be a scalar")
-            return _normalize_scalar(stripped)
+                raise ValueError(f"frontmatter field {key_name!r} must be a text value")
+            return _clean_text(stripped)
     raise ValueError(f"frontmatter field {key_name!r} is required")
 
 
-def _normalize_scalar(value: str) -> str:
+def _clean_text(value: str) -> str:
     if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
         value = value[1:-1]
     return value.replace('\\"', '"').replace("\\\\", "\\")
