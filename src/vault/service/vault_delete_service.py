@@ -159,6 +159,8 @@ class VaultDeleteService(FrozenModel):
         for node in nodes:
             if node.relative_path == target.relative_path:
                 continue
+            if node.relative_path in ROOT_OPERATIONAL_FILES:
+                continue
             for raw_link in node.links:
                 if self._target_key(normalize_wiki_target(raw_link)) not in target_keys:
                     continue
@@ -189,7 +191,13 @@ class VaultDeleteService(FrozenModel):
                 raise FileNotFoundError(
                     f"reference cleanup note not found: {Path(note_path).as_posix()}"
                 )
-            cleanup_paths.append(self.note_repository.relative_path(resolved_path))
+            relative_path = self.note_repository.relative_path(resolved_path)
+            if relative_path in ROOT_OPERATIONAL_FILES:
+                raise ValueError(
+                    "reference_cleanup_paths must not include operational files: "
+                    f"{relative_path}"
+                )
+            cleanup_paths.append(relative_path)
         return sorted(cleanup_paths)
 
     def _ensure_cleanup_paths_have_backlinks(

@@ -302,9 +302,56 @@ def test_mcp_delete_tool은_dry_run에서_log와_index를_변경하지_않는다
 
         # Then: preview 결과만 반환하고 target/log/index 파일은 그대로 유지된다.
         assert structured_delete_result["deleted"] is False
+        assert [
+            candidate["path"] for candidate in structured_delete_result["related_candidates"]
+        ] == []
         assert (vault_root / "concepts" / "agent-memory.md").exists()
         assert (vault_root / "log.md").read_text(encoding="utf-8") == log_before
         assert (vault_root / "index.md").read_text(encoding="utf-8") == index_before
+
+    asyncio.run(exercise_server())
+
+
+def test_mcp_delete_tool은_index를_참조_정리_대상으로_받지_않는다(
+    tmp_path: Path,
+) -> None:
+    async def exercise_server() -> None:
+        # Given: write tool로 생성되어 index.md에 등재된 note가 있다.
+        vault_root = tmp_path / "vault"
+        settings = Settings(host="127.0.0.1", vault_path=vault_root)
+        runtime = create_runtime(settings)
+        server = create_mcp_server(
+            settings,
+            runtime.read_service,
+            runtime.write_service,
+            runtime.search_service,
+            runtime.context_service,
+            runtime.git_push_service,
+            runtime.delete_service,
+        )
+        await server.call_tool(
+            "kb_write_note",
+            {
+                "note_path": "concepts/agent-memory.md",
+                "title": "Agent Memory",
+                "type": "concept",
+                "tags": ["agent-memory"],
+                "sources": ["raw/articles/source.md"],
+                "body": "## Summary\nAgent memory keeps durable context.",
+                "created": "2026-06-12T09:30:45Z",
+                "updated": "2026-06-12T10:31:46Z",
+            },
+        )
+
+        # When / Then: operational file은 자동 유지보수 대상이므로 backlink cleanup으로 받지 않는다.
+        with pytest.raises(ToolError, match="must not include operational files"):
+            await server.call_tool(
+                "kb_delete_note",
+                {
+                    "note_path": "concepts/agent-memory.md",
+                    "reference_cleanup_paths": ["index.md"],
+                },
+            )
 
     asyncio.run(exercise_server())
 
