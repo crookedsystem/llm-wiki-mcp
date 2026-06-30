@@ -15,10 +15,11 @@ from vault.service.result.write_note_result import WriteNoteResult
 from vault.service.vault_index_service import IndexEntry, VaultIndexService
 from vault.service.vault_log_service import LogEntry, VaultLogService, WriteAction
 from vault.service.vault_note_renderer import VaultNoteRenderer
-
-LOG_NOTE_PATH = "log.md"
-INDEX_NOTE_PATH = "index.md"
-ROOT_OPERATIONAL_FILES = frozenset({"SCHEMA.md", INDEX_NOTE_PATH, LOG_NOTE_PATH})
+from vault.service.vault_operational_paths import (
+    INDEX_NOTE_PATH,
+    LOG_NOTE_PATH,
+    ROOT_OPERATIONAL_FILES,
+)
 
 # Map a note's top-level folder to its canonical index.md section heading.
 _SECTION_BY_FOLDER: dict[str, str] = {

@@ -8,12 +8,16 @@ from vault.service.vault_operational_note import (
     strip_trailing_blank_lines,
 )
 
-WriteAction = Literal["create", "update"]
+WriteAction = Literal["create", "update", "delete"]
 
 _LOG_TITLE = "Wiki Log"
 _LOG_INTRO = "> Append-only changelog of wiki writes. Newest entries at top."
 _ENTRY_HEADING_PREFIX = "## ["
-_ACTION_LABELS: dict[WriteAction, str] = {"create": "Created", "update": "Updated"}
+_ACTION_LABELS: dict[WriteAction, str] = {
+    "create": "Created",
+    "update": "Updated",
+    "delete": "Deleted",
+}
 
 
 class LogEntry(FrozenModel):

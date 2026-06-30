@@ -30,6 +30,17 @@ class VaultIndexService(FrozenModel):
         new_body = self._upsert(note.body, entry)
         return note.with_body(new_body).with_updated(entry.updated).render()
 
+    def remove_entry(self, existing: str | None, *, slug: str, updated: str) -> str | None:
+        if existing is None:
+            return None
+        note = OperationalNote.parse(existing)
+        lines = note.body.split("\n")
+        existing_index = _existing_entry_index(lines, slug)
+        if existing_index is None:
+            return None
+        new_body = join_body([*lines[:existing_index], *lines[existing_index + 1 :]])
+        return note.with_body(new_body).with_updated(updated).render()
+
     def _parse_or_seed(self, existing: str | None, timestamp: str) -> OperationalNote:
         if existing is None:
             return _seed_index(timestamp)

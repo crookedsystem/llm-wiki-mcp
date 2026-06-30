@@ -18,6 +18,7 @@
 - 通过 `GET /metrics` REST endpoint 合并提供 vault 与 graph counters
 - 通过 `kb_search_notes` MCP tool 搜索 LLM Wiki Markdown
 - 通过 `kb_read_note` + `kb_write_note(if_hash=...)` 执行安全的 full-note update flow
+- 通过 `kb_delete_note` MCP tool 进行显式 confirmation 的 note 删除，并自动维护 log/index
 
 ## How to Start
 
@@ -98,7 +99,7 @@ Context hook 在用户输入时调用 `kb_search_notes`，把相关 wiki snippet
 - 当新 vault 还没有 `SCHEMA.md` 时，使用 skill 内置的 schema、page type、index、log 和 provenance 指南进行初始化
 - 将 `kb_search_notes` 视为 snippet 搜索而非完整文件读取。更新已有 note 时，先用 `kb_read_note` 读取完整 structured body 和 `content_hash`，再把该 hash 作为 `if_hash` 调用 `kb_write_note`
 - 通过 `kb_write_note` 写入完整 Markdown note
-- 删除前先用 `kb_delete_note(dry_run=true)` 预览目标和引用清理候选页面的证据。实际删除必须有用户明确请求，并完全传入返回的 `confirmation_phrase`；`reference_cleanup_paths` 不会删除页面，只会移除指向被删除 note 的 wikilink
+- 删除前先用 `kb_delete_note(dry_run=true)` 预览目标和引用清理候选页面的证据。实际删除必须有用户明确请求，并完全传入返回的 `confirmation_phrase`；`reference_cleanup_paths` 不会删除页面，只会移除指向被删除 note 的 wikilink。实际删除会写入 `log.md`，并自动移除目标在 `index.md` 中的 entry
 - 使用返回的 `content_hash` 作为下一次 optimistic concurrency 的 `if_hash`
 - 保持 raw source immutable，并在 durable wiki 变更时更新 `index.md` 与 `log.md`
 - 将已安装的 hook command 与 native hook、plugin、wrapper 一起使用：用户输入时加载 compact wiki context，并在 setup 中选中时于 agent 结束时运行 stop-time update pass。Claude Code 和 Codex 共享同一套 `UserPromptSubmit`/`Stop` hook schema（in-loop `decision=block` 再提示），因此被选中时 setup 可以接好。Hermes/Hermess 只提供 finalize 类 session hook，因此 setup 会安装 reusable script，供你接入 plugin/wrapper 或 finalize hook 来运行 out-of-loop update pass。
