@@ -171,6 +171,7 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
         assert "Actual deletion requires dry_run=false" in (
             tool_by_name["kb_delete_note"].description or ""
         )
+        assert "appends log.md" in (tool_by_name["kb_delete_note"].description or "")
         assert "Search Markdown notes" in (tool_by_name["kb_search_notes"].description or "")
         assert "wiki link context map" in (tool_by_name["kb_context"].description or "")
         assert "push origin to the current branch" in (
@@ -258,6 +259,169 @@ def test_mcp_delete_tool은_dry_run에서_참조_정리_후보와_confirmation�
     asyncio.run(exercise_server())
 
 
+def test_mcp_delete_tool은_dry_run에서_log와_index를_변경하지_않는다(
+    tmp_path: Path,
+) -> None:
+    async def exercise_server() -> None:
+        # Given: write tool로 생성되어 log/index에 등재된 note가 있다.
+        vault_root = tmp_path / "vault"
+        settings = Settings(host="127.0.0.1", vault_path=vault_root)
+        runtime = create_runtime(settings)
+        server = create_mcp_server(
+            settings,
+            runtime.read_service,
+            runtime.write_service,
+            runtime.search_service,
+            runtime.context_service,
+            runtime.git_push_service,
+            runtime.delete_service,
+        )
+        await server.call_tool(
+            "kb_write_note",
+            {
+                "note_path": "concepts/agent-memory.md",
+                "title": "Agent Memory",
+                "type": "concept",
+                "tags": ["agent-memory"],
+                "sources": ["raw/articles/source.md"],
+                "body": "## Summary\nAgent memory keeps durable context.",
+                "created": "2026-06-12T09:30:45Z",
+                "updated": "2026-06-12T10:31:46Z",
+                "summary": "Durable context",
+            },
+        )
+        log_before = (vault_root / "log.md").read_text(encoding="utf-8")
+        index_before = (vault_root / "index.md").read_text(encoding="utf-8")
+
+        # When: 기본 dry_run으로 삭제를 preview한다.
+        _, delete_result = await server.call_tool(
+            "kb_delete_note",
+            {"note_path": "concepts/agent-memory.md"},
+        )
+        structured_delete_result = cast(DeleteToolResult, delete_result)
+
+        # Then: preview 결과만 반환하고 target/log/index 파일은 그대로 유지된다.
+        assert structured_delete_result["deleted"] is False
+        assert [
+            candidate["path"] for candidate in structured_delete_result["related_candidates"]
+        ] == []
+        assert (vault_root / "concepts" / "agent-memory.md").exists()
+        assert (vault_root / "log.md").read_text(encoding="utf-8") == log_before
+        assert (vault_root / "index.md").read_text(encoding="utf-8") == index_before
+
+    asyncio.run(exercise_server())
+
+
+def test_mcp_delete_tool은_index를_참조_정리_대상으로_받지_않는다(
+    tmp_path: Path,
+) -> None:
+    async def exercise_server() -> None:
+        # Given: write tool로 생성되어 index.md에 등재된 note가 있다.
+        vault_root = tmp_path / "vault"
+        settings = Settings(host="127.0.0.1", vault_path=vault_root)
+        runtime = create_runtime(settings)
+        server = create_mcp_server(
+            settings,
+            runtime.read_service,
+            runtime.write_service,
+            runtime.search_service,
+            runtime.context_service,
+            runtime.git_push_service,
+            runtime.delete_service,
+        )
+        await server.call_tool(
+            "kb_write_note",
+            {
+                "note_path": "concepts/agent-memory.md",
+                "title": "Agent Memory",
+                "type": "concept",
+                "tags": ["agent-memory"],
+                "sources": ["raw/articles/source.md"],
+                "body": "## Summary\nAgent memory keeps durable context.",
+                "created": "2026-06-12T09:30:45Z",
+                "updated": "2026-06-12T10:31:46Z",
+            },
+        )
+
+        # When / Then: operational file은 자동 유지보수 대상이므로 backlink cleanup으로 받지 않는다.
+        with pytest.raises(ToolError, match="must not include operational files"):
+            await server.call_tool(
+                "kb_delete_note",
+                {
+                    "note_path": "concepts/agent-memory.md",
+                    "reference_cleanup_paths": ["index.md"],
+                },
+            )
+
+    asyncio.run(exercise_server())
+
+
+def test_mcp_delete_tool은_실제_삭제를_log에_기록하고_index에서_제거한다(
+    tmp_path: Path,
+) -> None:
+    async def exercise_server() -> None:
+        # Given: write tool로 생성되어 log/index에 등재된 note가 있다.
+        vault_root = tmp_path / "vault"
+        settings = Settings(host="127.0.0.1", vault_path=vault_root)
+        runtime = create_runtime(settings)
+        server = create_mcp_server(
+            settings,
+            runtime.read_service,
+            runtime.write_service,
+            runtime.search_service,
+            runtime.context_service,
+            runtime.git_push_service,
+            runtime.delete_service,
+        )
+        await server.call_tool(
+            "kb_write_note",
+            {
+                "note_path": "concepts/agent-memory.md",
+                "title": "Agent Memory",
+                "type": "concept",
+                "tags": ["agent-memory"],
+                "sources": ["raw/articles/source.md"],
+                "body": "## Summary\nAgent memory keeps durable context.",
+                "created": "2026-06-12T09:30:45Z",
+                "updated": "2026-06-12T10:31:46Z",
+                "summary": "Durable context",
+            },
+        )
+
+        # When: dry_run confirmation_phrase를 그대로 사용해 실제 삭제한다.
+        _, preview_result = await server.call_tool(
+            "kb_delete_note",
+            {"note_path": "concepts/agent-memory.md"},
+        )
+        confirmation_phrase = cast(DeleteToolResult, preview_result)["confirmation_phrase"]
+        _, delete_result = await server.call_tool(
+            "kb_delete_note",
+            {
+                "note_path": "concepts/agent-memory.md",
+                "dry_run": False,
+                "confirm": confirmation_phrase,
+            },
+        )
+        structured_delete_result = cast(DeleteToolResult, delete_result)
+
+        # Then: target note는 삭제되고 log/index는 자동 유지보수된다.
+        assert structured_delete_result["deleted"] is True
+        assert structured_delete_result["deleted_paths"] == ["concepts/agent-memory.md"]
+        assert structured_delete_result["updated_paths"] == ["log.md", "index.md"]
+        assert not (vault_root / "concepts" / "agent-memory.md").exists()
+        log = (vault_root / "log.md").read_text(encoding="utf-8")
+        index = (vault_root / "index.md").read_text(encoding="utf-8")
+        assert "delete | concepts/agent-memory" in log
+        assert "- Deleted: `concepts/agent-memory.md` — Agent Memory" in log
+        assert log.index("delete | concepts/agent-memory") < log.index(
+            "create | concepts/agent-memory"
+        )
+        assert "[[concepts/agent-memory|Agent Memory]]" not in index
+        assert "Durable context" not in index
+
+    asyncio.run(exercise_server())
+
+
 def test_mcp_delete_tool은_confirmation이_정확할_때만_명시된_참조를_정리한다(
     tmp_path: Path,
 ) -> None:
@@ -329,12 +493,15 @@ def test_mcp_delete_tool은_confirmation이_정확할_때만_명시된_참조를
         # Then: target만 삭제되고 참조 note에서는 target wikilink만 제거된다.
         assert structured_delete_result["deleted"] is True
         assert structured_delete_result["deleted_paths"] == ["concepts/agent-memory.md"]
-        assert structured_delete_result["updated_paths"] == ["queries/memory-review.md"]
+        assert structured_delete_result["updated_paths"] == ["queries/memory-review.md", "log.md"]
         assert not target_path.exists()
         assert related_path.exists()
         assert related_path.read_text(encoding="utf-8") == (
             "# Memory Review\n\nBack to Agent Memory.\n"
         )
+        assert "- Deleted: `concepts/agent-memory.md` — Agent Memory" in (
+            vault_root / "log.md"
+        ).read_text(encoding="utf-8")
 
     asyncio.run(exercise_server())
 
