@@ -194,8 +194,7 @@ class VaultDeleteService(FrozenModel):
             relative_path = self.note_repository.relative_path(resolved_path)
             if relative_path in ROOT_OPERATIONAL_FILES:
                 raise ValueError(
-                    "reference_cleanup_paths must not include operational files: "
-                    f"{relative_path}"
+                    f"reference_cleanup_paths must not include operational files: {relative_path}"
                 )
             cleanup_paths.append(relative_path)
         return sorted(cleanup_paths)
