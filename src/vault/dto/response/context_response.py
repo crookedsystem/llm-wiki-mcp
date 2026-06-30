@@ -5,6 +5,7 @@ from vault.service.result.context_result import (
     ContextReference,
     ContextResult,
     EntityGuidance,
+    PromptCue,
     SuggestedLink,
 )
 
@@ -39,6 +40,25 @@ class SuggestedLinkResponse(TypedDict):
     followup_search: str
 
 
+class PromptCueResponse(TypedDict):
+    path: str
+    title: str | None
+    content_hash: str
+    memory_kind: str
+    legacy_lane: str | None
+    evidence_status: str
+    updated: str | None
+    review_after: str | None
+    confidence: str | None
+    scope: str | None
+    applies_when: str | None
+    do: str | None
+    avoid: str | None
+    check_before_acting: str | None
+    prevention_cue: str | None
+    evidence: str | None
+
+
 class EntityGuidanceResponse(TypedDict):
     criteria: list[str]
     preferred_paths: list[str]
@@ -55,6 +75,10 @@ class ContextResponse(TypedDict):
     broken_links: list[BrokenWikiLinkResponse]
     link_targets: list[ContextReferenceResponse]
     suggested_links: list[SuggestedLinkResponse]
+    prompt_cues: list[PromptCueResponse]
+    person_tone: list[PromptCueResponse]
+    project_conventions: list[PromptCueResponse]
+    repeated_mistakes: list[PromptCueResponse]
 
 
 class ContextResponseMapper:
@@ -83,6 +107,21 @@ class ContextResponseMapper:
             "suggested_links": [
                 ContextResponseMapper._suggested_link_response(link)
                 for link in result.suggested_links
+            ],
+            "prompt_cues": [
+                ContextResponseMapper._prompt_cue_response(cue)
+                for cue in result.prompt_cues
+            ],
+            "person_tone": [
+                ContextResponseMapper._prompt_cue_response(cue) for cue in result.person_tone
+            ],
+            "project_conventions": [
+                ContextResponseMapper._prompt_cue_response(cue)
+                for cue in result.project_conventions
+            ],
+            "repeated_mistakes": [
+                ContextResponseMapper._prompt_cue_response(cue)
+                for cue in result.repeated_mistakes
             ],
         }
 
@@ -128,4 +167,25 @@ class ContextResponseMapper:
             "criteria": guidance.criteria,
             "preferred_paths": guidance.preferred_paths,
             "prewrite_checks": guidance.prewrite_checks,
+        }
+
+    @staticmethod
+    def _prompt_cue_response(cue: PromptCue) -> PromptCueResponse:
+        return {
+            "path": cue.path,
+            "title": cue.title,
+            "content_hash": cue.content_hash,
+            "memory_kind": cue.memory_kind,
+            "legacy_lane": cue.legacy_lane,
+            "evidence_status": cue.evidence_status,
+            "updated": cue.updated,
+            "review_after": cue.review_after,
+            "confidence": cue.confidence,
+            "scope": cue.scope,
+            "applies_when": cue.applies_when,
+            "do": cue.do,
+            "avoid": cue.avoid,
+            "check_before_acting": cue.check_before_acting,
+            "prevention_cue": cue.prevention_cue,
+            "evidence": cue.evidence,
         }

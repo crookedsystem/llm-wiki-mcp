@@ -139,7 +139,8 @@ def register_vault_tools(
         description=(
             "Build a wiki link context map for prompt, prewrite, or stop-hook use. "
             "Returns orientation pages, broken wiki links, existing link targets, suggested "
-            "links, usage guidance, and followup_search queries for kb_search_notes evidence."
+            "links, prompt-time cues with memory_kind from Prompt hints, usage guidance, "
+            "and followup_search queries for kb_search_notes evidence."
         )
     )
     def kb_context(
