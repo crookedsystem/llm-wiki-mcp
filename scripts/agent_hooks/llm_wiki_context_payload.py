@@ -3,7 +3,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-LINK_CONTEXT_KEYS = ("orientation", "broken_links", "link_targets", "suggested_links")
+LINK_CONTEXT_KEYS = (
+    "orientation",
+    "broken_links",
+    "link_targets",
+    "suggested_links",
+    "prompt_cues",
+)
 
 
 def is_link_context_payload(payload: Mapping[str, Any]) -> bool:
