@@ -304,13 +304,12 @@ class VaultContextGraphBuilder(FrozenModel):
         cues: list[PromptCue] = []
         cues_by_kind: dict[str, int] = {kind: 0 for kind in PROMPT_MEMORY_KINDS}
         for note in notes:
-            note_matches = self._matches_terms(note, terms)
             for cue in self._note_prompt_cues(note):
                 if len(cues) >= limit:
                     return cues
                 if cues_by_kind.get(cue.memory_kind, 0) >= PROMPT_CUE_LIMIT_PER_KIND:
                     continue
-                if not note_matches and not self._cue_matches_terms(cue, terms):
+                if not self._cue_matches_terms(cue, terms):
                     continue
                 cues.append(cue)
                 cues_by_kind[cue.memory_kind] = cues_by_kind.get(cue.memory_kind, 0) + 1

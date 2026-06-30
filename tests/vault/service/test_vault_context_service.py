@@ -167,7 +167,7 @@ def test_prompt_context는_prompt_hints를_lane별_cue로_반환한다(tmp_path:
         "## Prompt hints\n"
         "- lane: person_tone; applies when: writing a PR update; do: lead with risk; "
         "avoid: generic status narration; evidence: explicit review feedback; "
-        "confidence: high; updated: 2026-06-30; scope: person:kim-yongseok.\n"
+        "confidence: high; updated: 2026-06-30; scope: person:kim-yongseok.\n",
     )
     _write_note(
         vault_root / "entities" / "fanplus-api.md",
@@ -214,6 +214,52 @@ def test_prompt_context는_prompt_hints를_lane별_cue로_반환한다(tmp_path:
     assert response_by_kind["preference_profile"]["scope"] == "person:kim-yongseok"
     assert response["person_tone"][0]["evidence"] == "explicit review feedback"
     assert response["project_conventions"][0]["confidence"] == "medium"
+
+
+def test_prompt_context는_note본문이_맞아도_cue_scope가_맞지_않으면_제외한다(
+    tmp_path: Path,
+) -> None:
+    # Given: note 본문은 query와 맞지만 prompt hint 자체는 다른 scope에 묶여 있다.
+    vault_root = tmp_path / "vault"
+    _write_note(
+        vault_root / "entities" / "kim-yongseok.md",
+        "---\n"
+        "title: 김용석 CTO\n"
+        "type: entity\n"
+        "tags: [communication]\n"
+        "---\n\n"
+        "# 김용석 CTO\n\n"
+        "API bug triage meeting notes.\n\n"
+        "## Prompt hints\n"
+        "- lane: person_tone; applies when: writing a PR update; do: lead with risk; "
+        "avoid: generic status narration; evidence: explicit review feedback; "
+        "confidence: high; scope: person:kim-yongseok.\n",
+    )
+    _write_note(
+        vault_root / "entities" / "fanplus-api.md",
+        "---\n"
+        "title: fanplus-api\n"
+        "type: entity\n"
+        "tags: [project-context]\n"
+        "---\n\n"
+        "# fanplus-api\n\n"
+        "Project context.\n\n"
+        "## Prompt hints\n"
+        "- kind: project_convention; scope: repo:fanplus-api; "
+        "applies when: fixing API bug; check before acting: run regression tests; "
+        "confidence: high.\n",
+    )
+
+    # When: prompt mode context를 query와 직접 맞는 cue가 있는 작업으로 요청한다.
+    result = _context_service(vault_root).context(
+        ContextCommand(query="fix API bug", mode="prompt", limit=8)
+    )
+
+    # Then: prompt cue는 note 본문이 아니라 cue 단위 scope/applies_when으로 필터링된다.
+    cues_by_kind = {cue.memory_kind: cue for cue in result.prompt_cues}
+    assert set(cues_by_kind) == {"project_convention"}
+    assert cues_by_kind["project_convention"].scope == "repo:fanplus-api"
+    assert result.person_tone == []
 
 
 def test_context는_기존_wikilink가_있으면_중복_연결을_제안하지_않는다(

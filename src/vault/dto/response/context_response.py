@@ -109,8 +109,7 @@ class ContextResponseMapper:
                 for link in result.suggested_links
             ],
             "prompt_cues": [
-                ContextResponseMapper._prompt_cue_response(cue)
-                for cue in result.prompt_cues
+                ContextResponseMapper._prompt_cue_response(cue) for cue in result.prompt_cues
             ],
             "person_tone": [
                 ContextResponseMapper._prompt_cue_response(cue) for cue in result.person_tone
@@ -120,8 +119,7 @@ class ContextResponseMapper:
                 for cue in result.project_conventions
             ],
             "repeated_mistakes": [
-                ContextResponseMapper._prompt_cue_response(cue)
-                for cue in result.repeated_mistakes
+                ContextResponseMapper._prompt_cue_response(cue) for cue in result.repeated_mistakes
             ],
         }
 
