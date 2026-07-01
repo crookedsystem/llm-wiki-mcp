@@ -154,7 +154,7 @@ def run_context_mode(args: argparse.Namespace, query: str) -> int:
             )
         )
     except Exception as exc:  # noqa: BLE001 - hooks must fail open instead of blocking prompts.
-        print(format_context_error(args.server_name, args.server_url, exc))
+        print(format_context_error(exc))
         return 0
 
     print(

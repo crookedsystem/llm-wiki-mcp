@@ -30,7 +30,4 @@ class VaultContextService(FrozenModel):
             link_targets=graph.link_targets,
             suggested_links=graph.suggested_links,
             prompt_cues=graph.prompt_cues,
-            person_tone=graph.person_tone,
-            project_conventions=graph.project_conventions,
-            repeated_mistakes=graph.repeated_mistakes,
         )

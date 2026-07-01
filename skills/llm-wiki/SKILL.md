@@ -214,7 +214,7 @@ Use short bullets shaped like:
 
 Allowed memory kinds are `working_context`, `episodic_event`, `semantic_fact`, `procedural_pattern`, `preference_profile`, `project_convention`, `constraint_policy`, `failure_prevention`, `prospective_task`, `evaluation_feedback`, and `provenance_signal`. Each hint should include `scope`, an applicability trigger, one actionable `do`/`avoid`/`check before acting`/`prevention cue`, evidence status, confidence, and a date or review horizon when the context may go stale.
 
-Older notes may still use `lane: person_tone`, `lane: project_conventions`, or `lane: repeated_mistakes`; the server maps them to `preference_profile`, `project_convention`, and `failure_prevention` for backward compatibility. New notes should use `kind:` or `memory_kind:`.
+Prompt hints should use `kind:` or `memory_kind:`. The context response exposes prompt-time memory through the canonical `prompt_cues` list grouped by `memory_kind`.
 
 ## Internal wikilink discipline
 

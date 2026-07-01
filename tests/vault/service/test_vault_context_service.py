@@ -152,7 +152,9 @@ def test_prompt_context는_깨진링크보다_직접_link_target을_우선한다
     assert [target.path for target in result.link_targets] == ["entities/sample-api.md"]
 
 
-def test_prompt_context는_prompt_hints를_lane별_cue로_반환한다(tmp_path: Path) -> None:
+def test_prompt_context는_prompt_hints를_memory_kind별_cue로_반환한다(
+    tmp_path: Path,
+) -> None:
     # Given: prompt hook이 바로 사용할 수 있는 Prompt hints section이 있다.
     vault_root = tmp_path / "vault"
     _write_note(
@@ -165,7 +167,7 @@ def test_prompt_context는_prompt_hints를_lane별_cue로_반환한다(tmp_path:
         "# 김용석 CTO\n\n"
         "PR update communication context.\n\n"
         "## Prompt hints\n"
-        "- lane: person_tone; applies when: writing a PR update; do: lead with risk; "
+        "- kind: preference_profile; applies when: writing a PR update; do: lead with risk; "
         "avoid: generic status narration; evidence: explicit review feedback; "
         "confidence: high; updated: 2026-06-30; scope: person:kim-yongseok.\n",
     )
@@ -179,12 +181,12 @@ def test_prompt_context는_prompt_hints를_lane별_cue로_반환한다(tmp_path:
         "# fanplus-api\n\n"
         "API response contract context.\n\n"
         "## Prompt hints\n"
-        "- lane: project_conventions; applies when: changing API response shape; "
+        "- kind: project_convention; applies when: changing API response shape; "
         "check before acting: compare AS-IS and TO-BE JSON; confidence: medium.\n"
         "- kind: procedural_pattern; applies when: running API regression tests; "
         "do: reuse the existing pytest selector; evidence: repo test workflow; "
         "confidence: high.\n"
-        "- lane: repeated_mistakes; applies when: changing API response shape; "
+        "- kind: failure_prevention; applies when: changing API response shape; "
         "prevention cue: announce FE contract drift; confidence: high; "
         "review after: 2026-09-30.\n",
     )
@@ -195,7 +197,7 @@ def test_prompt_context는_prompt_hints를_lane별_cue로_반환한다(tmp_path:
     )
     response = ContextResponseMapper.to_response(result)
 
-    # Then: prompt hints가 일반 memory_kind와 legacy lane schema 양쪽으로 전달된다.
+    # Then: prompt hints가 canonical memory_kind schema로 전달된다.
     cues_by_kind = {cue.memory_kind: cue for cue in result.prompt_cues}
     assert set(cues_by_kind) == {
         "preference_profile",
@@ -203,17 +205,17 @@ def test_prompt_context는_prompt_hints를_lane별_cue로_반환한다(tmp_path:
         "procedural_pattern",
         "failure_prevention",
     }
-    assert result.person_tone[0].path == "entities/kim-yongseok.md"
-    assert result.person_tone[0].do == "lead with risk"
-    assert result.person_tone[0].avoid == "generic status narration"
-    assert result.project_conventions[0].check_before_acting == "compare AS-IS and TO-BE JSON"
-    assert result.repeated_mistakes[0].prevention_cue == "announce FE contract drift"
-    assert result.repeated_mistakes[0].review_after == "2026-09-30"
+    assert cues_by_kind["preference_profile"].path == "entities/kim-yongseok.md"
+    assert cues_by_kind["preference_profile"].do == "lead with risk"
+    assert cues_by_kind["preference_profile"].avoid == "generic status narration"
+    assert cues_by_kind["project_convention"].check_before_acting == "compare AS-IS and TO-BE JSON"
+    assert cues_by_kind["failure_prevention"].prevention_cue == "announce FE contract drift"
+    assert cues_by_kind["failure_prevention"].review_after == "2026-09-30"
     response_by_kind = {cue["memory_kind"]: cue for cue in response["prompt_cues"]}
     assert response_by_kind["procedural_pattern"]["do"] == "reuse the existing pytest selector"
     assert response_by_kind["preference_profile"]["scope"] == "person:kim-yongseok"
-    assert response["person_tone"][0]["evidence"] == "explicit review feedback"
-    assert response["project_conventions"][0]["confidence"] == "medium"
+    assert response_by_kind["preference_profile"]["evidence"] == "explicit review feedback"
+    assert response_by_kind["project_convention"]["confidence"] == "medium"
 
 
 def test_prompt_context는_note본문이_맞아도_cue_scope가_맞지_않으면_제외한다(
@@ -231,7 +233,7 @@ def test_prompt_context는_note본문이_맞아도_cue_scope가_맞지_않으면
         "# 김용석 CTO\n\n"
         "API bug triage meeting notes.\n\n"
         "## Prompt hints\n"
-        "- lane: person_tone; applies when: writing a PR update; do: lead with risk; "
+        "- kind: preference_profile; applies when: writing a PR update; do: lead with risk; "
         "avoid: generic status narration; evidence: explicit review feedback; "
         "confidence: high; scope: person:kim-yongseok.\n",
     )
@@ -259,7 +261,6 @@ def test_prompt_context는_note본문이_맞아도_cue_scope가_맞지_않으면
     cues_by_kind = {cue.memory_kind: cue for cue in result.prompt_cues}
     assert set(cues_by_kind) == {"project_convention"}
     assert cues_by_kind["project_convention"].scope == "repo:fanplus-api"
-    assert result.person_tone == []
 
 
 def test_context는_기존_wikilink가_있으면_중복_연결을_제안하지_않는다(

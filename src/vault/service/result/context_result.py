@@ -39,7 +39,6 @@ class PromptCue(FrozenModel):
     title: str | None
     content_hash: str
     memory_kind: str = "semantic_fact"
-    legacy_lane: str | None = None
     evidence_status: str = "verified"
     updated: str | None = None
     review_after: str | None = None
@@ -70,6 +69,3 @@ class ContextResult(FrozenModel):
     link_targets: list[ContextReference]
     suggested_links: list[SuggestedLink]
     prompt_cues: list[PromptCue] = Field(default_factory=list)
-    person_tone: list[PromptCue] = Field(default_factory=list)
-    project_conventions: list[PromptCue] = Field(default_factory=list)
-    repeated_mistakes: list[PromptCue] = Field(default_factory=list)

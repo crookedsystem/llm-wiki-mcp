@@ -45,7 +45,6 @@ class PromptCueResponse(TypedDict):
     title: str | None
     content_hash: str
     memory_kind: str
-    legacy_lane: str | None
     evidence_status: str
     updated: str | None
     review_after: str | None
@@ -76,9 +75,6 @@ class ContextResponse(TypedDict):
     link_targets: list[ContextReferenceResponse]
     suggested_links: list[SuggestedLinkResponse]
     prompt_cues: list[PromptCueResponse]
-    person_tone: list[PromptCueResponse]
-    project_conventions: list[PromptCueResponse]
-    repeated_mistakes: list[PromptCueResponse]
 
 
 class ContextResponseMapper:
@@ -110,16 +106,6 @@ class ContextResponseMapper:
             ],
             "prompt_cues": [
                 ContextResponseMapper._prompt_cue_response(cue) for cue in result.prompt_cues
-            ],
-            "person_tone": [
-                ContextResponseMapper._prompt_cue_response(cue) for cue in result.person_tone
-            ],
-            "project_conventions": [
-                ContextResponseMapper._prompt_cue_response(cue)
-                for cue in result.project_conventions
-            ],
-            "repeated_mistakes": [
-                ContextResponseMapper._prompt_cue_response(cue) for cue in result.repeated_mistakes
             ],
         }
 
@@ -174,7 +160,6 @@ class ContextResponseMapper:
             "title": cue.title,
             "content_hash": cue.content_hash,
             "memory_kind": cue.memory_kind,
-            "legacy_lane": cue.legacy_lane,
             "evidence_status": cue.evidence_status,
             "updated": cue.updated,
             "review_after": cue.review_after,

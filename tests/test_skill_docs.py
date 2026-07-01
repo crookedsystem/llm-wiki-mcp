@@ -64,7 +64,7 @@ def test_llm_wiki_skill_explains_hash_and_hook_rules() -> None:
         assert fragment in content
 
 
-def test_llm_wiki_skill_defines_prompt_time_context_lanes() -> None:
+def test_llm_wiki_skill_defines_prompt_time_context_kinds() -> None:
     content = SKILL.read_text(encoding="utf-8")
 
     required_fragments = [

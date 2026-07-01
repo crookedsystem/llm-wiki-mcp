@@ -30,12 +30,6 @@ PROMPT_MEMORY_KINDS = (
     "evaluation_feedback",
     "provenance_signal",
 )
-LEGACY_PROMPT_CUE_LANES = ("person_tone", "project_conventions", "repeated_mistakes")
-LEGACY_LANE_TO_MEMORY_KIND = {
-    "person_tone": "preference_profile",
-    "project_conventions": "project_convention",
-    "repeated_mistakes": "failure_prevention",
-}
 PROMPT_CUE_LIMIT_PER_KIND = 3
 
 
@@ -45,9 +39,6 @@ class ContextGraph(FrozenModel):
     link_targets: list[ContextReference]
     suggested_links: list[SuggestedLink]
     prompt_cues: list[PromptCue] = Field(default_factory=list)
-    person_tone: list[PromptCue] = Field(default_factory=list)
-    project_conventions: list[PromptCue] = Field(default_factory=list)
-    repeated_mistakes: list[PromptCue] = Field(default_factory=list)
 
 
 class _NoteContext(FrozenModel):
@@ -123,7 +114,6 @@ class VaultContextGraphBuilder(FrozenModel):
 
         broken_links = self._broken_links(scoped_notes, note_ids, limit=remaining)
         prompt_cues = self._prompt_cues(scoped_notes, command.query, limit=command.limit)
-        legacy_cues = self._legacy_prompt_cues(prompt_cues)
 
         return ContextGraph(
             orientation=orientation,
@@ -131,9 +121,6 @@ class VaultContextGraphBuilder(FrozenModel):
             link_targets=link_targets,
             suggested_links=suggested_links,
             prompt_cues=prompt_cues,
-            person_tone=legacy_cues["person_tone"],
-            project_conventions=legacy_cues["project_conventions"],
-            repeated_mistakes=legacy_cues["repeated_mistakes"],
         )
 
     def _notes(self, path_prefix: str | None) -> list[_NoteContext]:
@@ -315,14 +302,6 @@ class VaultContextGraphBuilder(FrozenModel):
                 cues_by_kind[cue.memory_kind] = cues_by_kind.get(cue.memory_kind, 0) + 1
         return cues
 
-    def _legacy_prompt_cues(self, cues: list[PromptCue]) -> dict[str, list[PromptCue]]:
-        cues_by_lane: dict[str, list[PromptCue]] = {lane: [] for lane in LEGACY_PROMPT_CUE_LANES}
-        for cue in cues:
-            if cue.legacy_lane not in cues_by_lane:
-                continue
-            cues_by_lane[cue.legacy_lane].append(cue)
-        return cues_by_lane
-
     def _note_prompt_cues(self, note: _NoteContext) -> list[PromptCue]:
         cues: list[PromptCue] = []
         in_prompt_hints = False
@@ -354,28 +333,13 @@ class VaultContextGraphBuilder(FrozenModel):
         return fields
 
     def _prompt_memory_kind(self, fields: dict[str, str]) -> str | None:
-        raw_kind = (
-            fields.get("memory_kind")
-            or fields.get("kind")
-            or fields.get("memory")
-            or fields.get("lane")
-        )
+        raw_kind = fields.get("memory_kind") or fields.get("kind") or fields.get("memory")
         if raw_kind is None:
             return None
         normalized_kind = raw_kind.strip().lower().replace("-", "_").replace(" ", "_")
-        normalized_kind = LEGACY_LANE_TO_MEMORY_KIND.get(normalized_kind, normalized_kind)
         if normalized_kind not in PROMPT_MEMORY_KINDS:
             return None
         return normalized_kind
-
-    def _legacy_lane(self, fields: dict[str, str], memory_kind: str) -> str | None:
-        del memory_kind
-        lane = fields.get("lane")
-        if lane is not None:
-            normalized_lane = lane.strip().lower().replace("-", "_").replace(" ", "_")
-            if normalized_lane in LEGACY_PROMPT_CUE_LANES:
-                return normalized_lane
-        return None
 
     def _prompt_cue(
         self,
@@ -389,7 +353,6 @@ class VaultContextGraphBuilder(FrozenModel):
             title=note.title,
             content_hash=note.content_hash,
             memory_kind=memory_kind,
-            legacy_lane=self._legacy_lane(fields, memory_kind),
             evidence_status=fields.get("evidence_status", "verified"),
             updated=fields.get("updated"),
             review_after=fields.get("review_after"),
