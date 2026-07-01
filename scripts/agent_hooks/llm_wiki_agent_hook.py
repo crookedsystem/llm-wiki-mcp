@@ -47,7 +47,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     event = parse_event(raw_stdin)
 
     if args.mode == "context":
-        query = args.query or extract_prompt(event) or raw_stdin.strip()
+        query = args.query or extract_prompt(event)
+        if not query and not event:
+            query = raw_stdin.strip()
         if not query:
             return 0
         return run_context_mode(args, query)
@@ -152,7 +154,7 @@ def run_context_mode(args: argparse.Namespace, query: str) -> int:
             )
         )
     except Exception as exc:  # noqa: BLE001 - hooks must fail open instead of blocking prompts.
-        print(format_context_error(args.server_name, args.server_url, exc))
+        print(format_context_error(exc))
         return 0
 
     print(

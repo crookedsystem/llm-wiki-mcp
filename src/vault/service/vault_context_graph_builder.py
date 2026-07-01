@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from pydantic import Field
+
 from common.helper.note_metadata_helper import extract_note_metadata
 from common.helper.wiki_link_helper import extract_wiki_links, normalize_wiki_target
 from common.model import FrozenModel
@@ -10,9 +12,25 @@ from vault.service.command.context_command import ContextCommand
 from vault.service.result.context_result import (
     BrokenWikiLink,
     ContextReference,
+    PromptCue,
     SuggestedLink,
 )
 from vault.service.vault_context_spec import ORIENTATION_PATHS
+
+PROMPT_MEMORY_KINDS = (
+    "working_context",
+    "episodic_event",
+    "semantic_fact",
+    "procedural_pattern",
+    "preference_profile",
+    "project_convention",
+    "constraint_policy",
+    "failure_prevention",
+    "prospective_task",
+    "evaluation_feedback",
+    "provenance_signal",
+)
+PROMPT_CUE_LIMIT_PER_KIND = 3
 
 
 class ContextGraph(FrozenModel):
@@ -20,6 +38,7 @@ class ContextGraph(FrozenModel):
     broken_links: list[BrokenWikiLink]
     link_targets: list[ContextReference]
     suggested_links: list[SuggestedLink]
+    prompt_cues: list[PromptCue] = Field(default_factory=list)
 
 
 class _NoteContext(FrozenModel):
@@ -41,6 +60,9 @@ class VaultContextGraphBuilder(FrozenModel):
         scoped_notes = self._notes(path_prefix=command.path_prefix)
         notes_by_path = {note.path: note for note in all_notes}
         note_ids = self._note_ids(all_notes)
+
+        if command.mode == "prompt":
+            return self._build_prompt_graph(command, scoped_notes, notes_by_path, note_ids)
 
         remaining = command.limit
         orientation = self._orientation(notes_by_path, command.query, limit=min(3, remaining))
@@ -65,6 +87,40 @@ class VaultContextGraphBuilder(FrozenModel):
             broken_links=broken_links,
             link_targets=link_targets,
             suggested_links=suggested_links,
+        )
+
+    def _build_prompt_graph(
+        self,
+        command: ContextCommand,
+        scoped_notes: list[_NoteContext],
+        notes_by_path: dict[str, _NoteContext],
+        note_ids: dict[str, str],
+    ) -> ContextGraph:
+        remaining = command.limit
+        link_targets = self._link_targets(scoped_notes, command.query, limit=remaining)
+        remaining -= len(link_targets)
+
+        suggested_links = self._suggested_links(
+            scoped_notes,
+            link_targets,
+            notes_by_path,
+            command.query,
+            limit=remaining,
+        )
+        remaining -= len(suggested_links)
+
+        orientation = self._orientation(notes_by_path, command.query, limit=min(3, remaining))
+        remaining -= len(orientation)
+
+        broken_links = self._broken_links(scoped_notes, note_ids, limit=remaining)
+        prompt_cues = self._prompt_cues(scoped_notes, command.query, limit=command.limit)
+
+        return ContextGraph(
+            orientation=orientation,
+            broken_links=broken_links,
+            link_targets=link_targets,
+            suggested_links=suggested_links,
+            prompt_cues=prompt_cues,
         )
 
     def _notes(self, path_prefix: str | None) -> list[_NoteContext]:
@@ -223,6 +279,112 @@ class VaultContextGraphBuilder(FrozenModel):
             relation=relation,
             followup_search=f"{query} {note.title or note.path}".strip(),
         )
+
+    def _prompt_cues(
+        self,
+        notes: list[_NoteContext],
+        query: str,
+        *,
+        limit: int,
+    ) -> list[PromptCue]:
+        terms = self._query_terms(query)
+        cues: list[PromptCue] = []
+        cues_by_kind: dict[str, int] = {kind: 0 for kind in PROMPT_MEMORY_KINDS}
+        for note in notes:
+            for cue in self._note_prompt_cues(note):
+                if len(cues) >= limit:
+                    return cues
+                if cues_by_kind.get(cue.memory_kind, 0) >= PROMPT_CUE_LIMIT_PER_KIND:
+                    continue
+                if not self._cue_matches_terms(cue, terms):
+                    continue
+                cues.append(cue)
+                cues_by_kind[cue.memory_kind] = cues_by_kind.get(cue.memory_kind, 0) + 1
+        return cues
+
+    def _note_prompt_cues(self, note: _NoteContext) -> list[PromptCue]:
+        cues: list[PromptCue] = []
+        in_prompt_hints = False
+        for line in note.content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("## "):
+                in_prompt_hints = stripped.lower() == "## prompt hints"
+                continue
+            if not in_prompt_hints or not stripped.startswith("- "):
+                continue
+
+            fields = self._prompt_hint_fields(stripped[2:])
+            memory_kind = self._prompt_memory_kind(fields)
+            if memory_kind is None:
+                continue
+            cues.append(self._prompt_cue(note, fields, memory_kind=memory_kind))
+        return cues
+
+    def _prompt_hint_fields(self, raw_bullet: str) -> dict[str, str]:
+        fields: dict[str, str] = {}
+        for raw_part in raw_bullet.split(";"):
+            key, separator, value = raw_part.partition(":")
+            if not separator:
+                continue
+            normalized_key = key.strip().lower().replace("-", "_").replace(" ", "_")
+            normalized_value = value.strip().rstrip(".")
+            if normalized_key and normalized_value:
+                fields[normalized_key] = normalized_value
+        return fields
+
+    def _prompt_memory_kind(self, fields: dict[str, str]) -> str | None:
+        raw_kind = fields.get("memory_kind") or fields.get("kind") or fields.get("memory")
+        if raw_kind is None:
+            return None
+        normalized_kind = raw_kind.strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized_kind not in PROMPT_MEMORY_KINDS:
+            return None
+        return normalized_kind
+
+    def _prompt_cue(
+        self,
+        note: _NoteContext,
+        fields: dict[str, str],
+        *,
+        memory_kind: str,
+    ) -> PromptCue:
+        return PromptCue(
+            path=note.path,
+            title=note.title,
+            content_hash=note.content_hash,
+            memory_kind=memory_kind,
+            evidence_status=fields.get("evidence_status", "verified"),
+            updated=fields.get("updated"),
+            review_after=fields.get("review_after"),
+            confidence=fields.get("confidence"),
+            scope=fields.get("scope"),
+            applies_when=fields.get("applies_when"),
+            do=fields.get("do"),
+            avoid=fields.get("avoid"),
+            check_before_acting=fields.get("check_before_acting"),
+            prevention_cue=fields.get("prevention_cue"),
+            evidence=fields.get("evidence"),
+        )
+
+    def _cue_matches_terms(self, cue: PromptCue, terms: list[str]) -> bool:
+        haystack = " ".join(
+            value
+            for value in (
+                cue.path,
+                cue.title or "",
+                cue.memory_kind,
+                cue.scope or "",
+                cue.applies_when or "",
+                cue.do or "",
+                cue.avoid or "",
+                cue.check_before_acting or "",
+                cue.prevention_cue or "",
+                cue.evidence or "",
+                cue.confidence or "",
+            )
+            if value
+        ).lower()
+        return any(term in haystack for term in terms)
 
     def _target_relation(self, note: _NoteContext) -> str | None:
         tags = {tag.lower() for tag in note.tags}

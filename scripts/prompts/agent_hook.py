@@ -14,15 +14,17 @@ knowledge, then act on that decision. Do not write reflexively — judge first.
 
 Step 1 — Judge. This turn is worth recording ONLY if it produced at least one of:
 - a durable fact, decision, or the rationale behind it that outlives this conversation;
-- a reusable procedure, gotcha, convention, or constraint someone would want again later;
+- a reusable procedure, gotcha, convention, constraint, evaluation signal, or prevention cue;
+- a scoped prompt-time hint with a memory kind such as preference/profile, project convention,
+  procedural pattern, failure prevention, prospective task, provenance, or policy constraint;
 - a relationship between entities/concepts the wiki does not already capture;
 - an open question worth tracking.
 It is NOT worth recording when the turn was transient: a one-off question, exploration with no
 conclusion, a trivial change already self-explanatory in code/git, or knowledge the wiki already
 holds. When in doubt, prefer NOT writing — low-signal notes are worse than none.
 
-Step 2 — If nothing qualifies: stop normally without writing, and say in one line that you
-judged this turn as not wiki-worthy.
+Step 2 — If nothing qualifies: stop normally without writing. Do not mention wiki maintenance
+unless the user asked about it.
 
 Step 3 — If something qualifies, use the configured llm-wiki MCP server to:
 1. call `kb_context` with `mode="stop"` or `mode="prewrite"` first when available; otherwise
@@ -33,8 +35,10 @@ Step 3 — If something qualifies, use the configured llm-wiki MCP server to:
    (`[[path|label]]`) in summaries, key facts, and relationship prose; tags, sources, titles,
    or index entries do not create graph edges;
 4. write only the durable knowledge identified in Step 1 (summarize — never copy private
-   transcripts wholesale);
-5. update `index.md` and append a compact `log.md` entry for any durable wiki change;
+   transcripts wholesale; never save sensitive personal inferences, blame labels, tone
+   judgments, or inferred preferences unless the user made them explicit and durable);
+5. pass a concise `summary` to `kb_write_note`; `index.md` and `log.md` are maintained
+   automatically as side effects of real note writes;
 6. use returned `content_hash` values as `if_hash` when updating existing notes.
 Then stop normally.
 """
@@ -44,28 +48,31 @@ CONTEXT_BLOCK_CLOSE: Final = "</llm-wiki-context>"
 
 CONTEXT_ERROR_TEMPLATE: Final = (
     "<llm-wiki-context>\n"
-    "LLM Wiki MCP context load failed for `{server_name}` at `{server_url}`: "
-    "{error_type}. Continue without inventing wiki contents; "
+    "LLM Wiki context unavailable ({error_type}). Do not invent wiki contents; "
     "use MCP tools later if needed.\n"
     "</llm-wiki-context>"
 )
 
 CONTEXT_EMPTY_TEMPLATE: Final = (
     "<llm-wiki-context>\n"
-    "MCP server: `{server_name}` ({server_url})\n"
-    "No matching LLM Wiki link context was found for this prompt. "
-    "Before creating pages, search again for specific entities/concepts "
-    "and follow the `llm-wiki` skill's schema/index/log rules.\n"
+    "No matching LLM Wiki context was found for this prompt. "
+    "Absence of hook context is not evidence that no convention or memory exists; "
+    "continue normally unless the task later requires wiki lookup or writing.\n"
     "</llm-wiki-context>"
 )
 
 CONTEXT_HEADER_TEMPLATE: Final = "MCP server: `{server_name}` ({server_url})"
 
-CONTEXT_RESULTS_INTRO: Final = "Relevant existing wiki notes from `kb_search_notes`:"
+CONTEXT_RESULTS_INTRO: Final = (
+    "Retrieved wiki-note snippets from `kb_search_notes`; treat as orientation unless "
+    "evidence is labeled:"
+)
 
 CONTEXT_FOOTER: Final = (
-    "Use this as orientation only. For updates, retrieve the full current note body "
-    "when available, then resubmit the complete replacement structured fields via "
+    "Use this as orientation only; current user/developer instructions and verified repo "
+    "state override wiki memory. Do not infer personal traits, mood, or preferences from "
+    "sparse context; use only explicit durable notes. For updates, retrieve the full current "
+    "note body when available, then resubmit the complete replacement structured fields via "
     "`kb_write_note` with `if_hash`; do not pass complete Markdown. "
     "Strengthen in-body Obsidian wikilinks: replace bare mentions with verified "
     "[[path|label]] links before writing; tags/sources/titles/index entries do not "

@@ -82,13 +82,25 @@ URL 결정 순서는 `--server-url` -> `LLM_WIKI_MCP_URL` -> `KB_HOST`/`KB_PORT`
 
 설정 후에는 agent session을 재시작해 MCP tool, skill, hook 설정을 다시 로드합니다.
 
+### Prompt-time context 빠른 확인
+
+context-loader처럼 쓰기 위한 필수 경로는 다음입니다.
+
+1. `uv run llm-wiki`로 서버를 시작합니다.
+2. `uv run python scripts/main.py --agent codex` 또는 사용하는 agent에 맞는 setup 명령을 실행합니다.
+3. agent를 재시작해 MCP tool, skill, hook 설정을 다시 로드합니다.
+4. wiki에 존재하는 프로젝트, 모듈, 사람, PR, Slack, incident 같은 anchor를 포함해 prompt를 보냅니다.
+5. 주입된 `<llm-wiki-context>` block이 `kb_context` 기반인지 확인하고, `prompt_cues` 항목은 현재 작업에 한정된 참고 정보로만 취급합니다. 새 서버는 `preference_profile`, `project_convention`, `procedural_pattern`, `failure_prevention`, `prospective_task`, `evaluation_feedback` 같은 `memory_kind`로 cue를 묶습니다.
+
+Prompt-time context는 기본 hook 경로입니다. Stop hook과 `kb_push_vault`는 선택 기능입니다. Stop hook은 작업 종료 시 durable discovery를 기록하고, push는 명시 요청이나 scheduler 설정이 있을 때만 vault를 GitHub에 동기화합니다.
+
 ## How to Work
 
 ### Hook이 동작하는 원리
 
 Setup은 agent별 hook directory에 `llm-wiki-context-hook.sh`를 만듭니다. Stop hook prompt에 `Y`로 답한 경우에만 `llm-wiki-stop-hook.sh`를 만들고, Claude Code와 Codex는 선택된 hook entry를 `UserPromptSubmit`/`Stop` hook 설정에 병합합니다. Hermes/Hermess는 finalize 계열 hook에 직접 연결할 수 있도록 재사용 script를 설치합니다.
 
-Context hook은 사용자 입력 시점에 `kb_search_notes`를 호출해 관련 wiki snippet을 model 앞에 붙입니다. 선택된 경우 Stop hook은 종료 직전에 wiki-worthy 지식만 판단해서 기록하라는 update pass를 요청합니다. Claude Code와 Codex는 한 번 `decision=block`으로 model을 재호출하고, `stop_hook_active=true`이면 다시 막지 않아 loop를 피합니다. Hook helper나 `uv`가 없으면 hook은 agent 실행을 방해하지 않도록 조용히 종료합니다.
+Context hook은 사용자 입력 시점에 `kb_context`를 호출해 compact wiki navigation context를 model 앞에 붙입니다. 오래된 서버에서는 raw `kb_search_notes` snippet으로 fallback합니다. Hook으로 주입되는 context에는 명시 선호, 프로젝트 컨벤션, 재사용 절차, 제약, 실패 예방 체크, 미래 작업, 평가 피드백, provenance signal 같은 prompt-time memory cue가 포함될 수 있지만, 이 cue는 현재 작업에 맞게 좁게 적용되는 참고 정보입니다. 선택된 경우 Stop hook은 종료 직전에 wiki-worthy 지식만 판단해서 기록하라는 update pass를 요청합니다. Claude Code와 Codex는 한 번 `decision=block`으로 model을 재호출하고, `stop_hook_active=true`이면 다시 막지 않아 loop를 피합니다. Hook helper나 `uv`가 없으면 hook은 agent 실행을 방해하지 않도록 조용히 종료합니다.
 
 ### Agent가 skill을 사용하는 방식
 
@@ -101,8 +113,8 @@ Skill은 agent에게 다음을 지시합니다:
 - `kb_write_note`를 통해 완전한 Markdown note 작성
 - 삭제는 먼저 `kb_delete_note(dry_run=true)`로 대상과 참조 정리 후보 근거를 확인. 실제 삭제는 사용자의 명시 요청과 반환된 `confirmation_phrase`의 정확한 전달이 필요하며, `reference_cleanup_paths`는 해당 page를 삭제하지 않고 삭제 대상 note를 가리키는 wikilink만 제거함. 실제 삭제 시 `log.md`에 기록하고 대상의 `index.md` entry를 자동 제거함
 - optimistic concurrency를 위해 반환된 `content_hash`를 다음 `if_hash`로 사용
-- raw source는 immutable하게 유지하고 durable wiki 변경 시 `index.md`와 `log.md` 업데이트
-- 설치된 hook command를 native hook, plugin, wrapper와 함께 사용: 사용자 input 시점에는 compact wiki context를 로드하고, setup에서 선택한 경우 agent 종료 시점에는 stop-time update pass 실행. Claude Code와 Codex는 동일한 `UserPromptSubmit`/`Stop` hook schema(in-loop `decision=block` 재프롬프트)를 공유하므로 선택된 경우 setup이 연결할 수 있습니다. Hermes/Hermess는 finalize 계열 session hook만 제공하므로, plugin/wrapper나 finalize hook에 연결해 out-of-loop update pass를 돌리도록 재사용 script를 설치합니다.
+- raw source는 immutable하게 유지하고, durable content write는 `kb_write_note`를 통해 `index.md`와 `log.md`를 자동 유지
+- 설치된 hook command를 native hook, plugin, wrapper와 함께 사용: 사용자 input 시점에는 compact wiki context를 로드하고, setup에서 선택한 경우 agent 종료 시점에는 stop-time update pass 실행. Prompt-time cue는 `preference_profile`, `project_convention`, `procedural_pattern`, `constraint_policy`, `failure_prevention`, `prospective_task`, `evaluation_feedback` 같은 `memory_kind`로 scope를 좁히고, 현재 사용자 지시와 검증된 repo 상태가 wiki memory보다 우선합니다. Claude Code와 Codex는 동일한 `UserPromptSubmit`/`Stop` hook schema(in-loop `decision=block` 재프롬프트)를 공유하므로 선택된 경우 setup이 연결할 수 있습니다. Hermes/Hermess는 finalize 계열 session hook만 제공하므로, plugin/wrapper나 finalize hook에 연결해 out-of-loop update pass를 돌리도록 재사용 script를 설치합니다.
 
 현재 서버가 노출하는 MCP tool은 `kb_read_note`, `kb_write_note`, `kb_delete_note`, `kb_search_notes`, `kb_context`, `kb_push_vault`입니다. Vault/graph counter는 REST `GET /metrics` endpoint로 제공합니다.
 

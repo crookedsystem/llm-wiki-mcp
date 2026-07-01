@@ -1,6 +1,6 @@
 ---
 name: llm-wiki
-description: "Use llm-wiki from Hermes/Hermess, Claude Code, or Codex to search, model, and maintain an Obsidian/Markdown LLM Wiki knowledge base. Trigger for vault, KB, wiki, Obsidian, research memory, persistent note-writing, MCP context-loading hooks, and end-of-task wiki update workflows."
+description: "Use llm-wiki from Hermes/Hermess, Claude Code, or Codex to search, model, and maintain an Obsidian/Markdown LLM Wiki knowledge base. Trigger for vault, KB, wiki, Obsidian, research memory, persistent note-writing, MCP context-loading hooks, explicit wiki-memory prompt-time context for named people/projects/modules, and end-of-task wiki update workflows."
 ---
 
 # LLM Wiki
@@ -22,7 +22,7 @@ The main wiki workflow uses these tool names:
 - `kb_write_note(note_path, title, type, tags, sources, body, updated, created?, summary?, confidence?, contested?, if_hash?)` — write a note inside the configured vault from structured fields. `updated` must be a UTC ISO datetime with seconds and a trailing `Z` (`YYYY-MM-DDTHH:MM:SSZ`); new notes also require `created` in that format. Existing notes require optimistic concurrency with `if_hash` and must omit `created` so the original creation timestamp is preserved. The write also appends a `log.md` changelog entry and upserts the page's `index.md` entry automatically, so you never hand-maintain those two files for note writes. Pass `summary` as the one-line description used for the index entry and log bullet; it falls back to `title` when omitted.
 - `kb_read_note(note_path)` — read a complete existing note as structured fields for safe full-replacement updates. It returns the rendered note's frontmatter fields, body without YAML/title/provenance, and the current `content_hash` to pass as `if_hash` to `kb_write_note`.
 - `kb_delete_note(note_path, reference_cleanup_paths?, dry_run?, confirm?)` — preview or delete a note and optionally clean backlinks from explicitly listed referencing notes. Default `dry_run=true` returns reference-cleanup candidates, evidence, and an exact `confirmation_phrase`. Actual deletion requires `dry_run=false` and `confirm` exactly equal to that phrase. Referencing notes are not deleted; when approved paths are passed in `reference_cleanup_paths`, only wikilinks pointing at `note_path` are removed from those notes. Actual deletion appends `log.md` and removes the target's `index.md` entry automatically when present.
-- `kb_context(query, mode?, limit?, path_prefix?)` — build a wiki link context map for prompt, prewrite, or stop-hook use. It returns orientation pages, broken wiki links, existing link targets, suggested links, usage guidance, entity guidance, and `followup_search` queries. It intentionally omits score, snippets, and textual evidence.
+- `kb_context(query, mode?, limit?, path_prefix?)` — build a wiki context map for prompt, prewrite, or stop-hook use. In prompt mode it prioritizes scoped prompt cues from `## Prompt hints`, link targets, and suggested links; in prewrite/stop mode it also returns orientation pages and broken wiki links. It returns usage guidance, entity guidance, and `followup_search` queries, but intentionally omits score, snippets, and textual evidence.
 - `kb_search_notes(query, limit?, path_prefix?)` — low-level evidence search. It searches the Markdown LLM Wiki vault and returns ranked paths, titles, page types, tags, content hashes, and line snippets. Use it when `kb_context.followup_search` or your own question needs textual evidence.
 
 Vault and graph counters are exposed as a REST API endpoint at `GET /metrics`, not as MCP tools.
@@ -54,7 +54,7 @@ queries/         # valuable answered questions worth preserving
 ## First actions in a session
 
 1. Confirm the MCP server is connected by listing tools or calling `kb_context` with a narrow orientation query such as `index`.
-2. Orient before writing. Prefer `kb_context(mode="prompt"|"prewrite"|"stop")` to identify orientation pages, broken links, link targets, and suggested links. If the vault is directly readable through file tools, read `SCHEMA.md`, `index.md`, and the recent tail of `log.md` when those pages are relevant. If direct file reads are unavailable and textual evidence is needed, use `kb_search_notes` with the returned `followup_search` values.
+2. Orient before writing. Prefer `kb_context(mode="prompt"|"prewrite"|"stop")` to identify prompt cues, link targets, suggested links, orientation pages, and broken links. If the vault is directly readable through file tools, read `SCHEMA.md`, `index.md`, and the recent tail of `log.md` when those pages are relevant. If direct file reads are unavailable and textual evidence is needed, use `kb_search_notes` with the returned `followup_search` values.
 3. Search for existing pages before creating new ones. Avoid duplicate entity or concept pages.
 4. Decide the access mode:
    - **Full-read mode:** safe to update existing notes because direct file reads or `kb_read_note` provide the complete current structured note body and exact current `content_hash` for `if_hash`.
@@ -140,6 +140,11 @@ Before creating an entity:
 - Prefer updating or linking an existing entity over creating a parallel page.
 - If the new page is project-specific, link it from related concept/query pages and link those pages back to the entity.
 - Put project-specific code style, development style, and domain rules under the matching entity as relationships or outbound links, not as isolated unanchored notes.
+- Put prompt-time memory on the smallest stable anchor that owns the scope: person, team, project, repository, service, module, workflow, or concept page. Include scope, trigger, evidence, confidence, and a stale-review date so hooks can decide whether it applies.
+- Store person tone as `preference_profile` only when it is an explicit preference, explicit correction, or durable feedback pattern. Phrase it as an executable communication preference, not a personality claim.
+- Store project conventions as `project_convention` on the named project/repository/service/module entity or a linked concept page. Include repo/service/module/path scope and source.
+- Store repeated mistake patterns as `failure_prevention` in `concepts/` or `queries/`, linked back to the relevant person, project, service, workflow, or module entity. Phrase them as prevention cues, not blame.
+- Store reusable workflows, tool recipes, commands, and skill-like patterns as `procedural_pattern`; store future reminders or commitments as `prospective_task`; store review/eval feedback as `evaluation_feedback`.
 
 ### Required frontmatter
 
@@ -192,6 +197,24 @@ One short paragraph explaining why this page matters.
 ```
 
 Every new synthesized page should have at least two useful outbound `[[wikilinks]]` when possible. If two links are impossible because the vault is new, create the most important link now and note in the page body's open questions that back-links should be filled after more pages exist.
+
+### Prompt hints section
+
+When a page contains context that should be retrieved automatically by prompt hooks, add a compact optional `## Prompt hints` section. Keep it extractable and scoped; do not force hooks to summarize long prose.
+
+Use short bullets shaped like:
+
+```markdown
+## Prompt hints
+- kind: preference_profile; scope: person:kim-yongseok channel:PR; applies when: writing to [[entities/kim-yongseok|김용석 CTO]]; do: lead with risk and decision impact; avoid: generic status narration; evidence: explicit review feedback; confidence: high; review after: 2026-09-30.
+- kind: project_convention; scope: repo:fanplus-api module:queue-workers; applies when: editing `fanplus-api` queue workers; check before acting: existing retry/backoff convention; evidence: [[concepts/fanplus-api-domain-rules|fanplus-api 도메인 룰]]; confidence: medium.
+- kind: procedural_pattern; scope: repo:fanplus-api task:regression-test; applies when: running API regression tests; do: reuse the existing pytest selector; evidence: repo test workflow; confidence: high.
+- kind: failure_prevention; scope: api-contracts; applies when: changing API response shape; avoid: undocumented FE contract drift; prevention cue: compare AS-IS/TO-BE JSON and announce it; evidence: repeated PR feedback; confidence: high; review after: 2026-09-30.
+```
+
+Allowed memory kinds are `working_context`, `episodic_event`, `semantic_fact`, `procedural_pattern`, `preference_profile`, `project_convention`, `constraint_policy`, `failure_prevention`, `prospective_task`, `evaluation_feedback`, and `provenance_signal`. Each hint should include `scope`, an applicability trigger, one actionable `do`/`avoid`/`check before acting`/`prevention cue`, evidence status, confidence, and a date or review horizon when the context may go stale.
+
+Prompt hints should use `kind:` or `memory_kind:`. The context response exposes prompt-time memory through the canonical `prompt_cues` list grouped by `memory_kind`.
 
 ## Internal wikilink discipline
 
@@ -351,7 +374,7 @@ Deletion is destructive and must be opt-in for every affected page.
 
 Use the wiki as a graph, not just a text search index:
 
-1. Start with `kb_context(mode="prompt")` to see orientation pages, broken links, link targets, and suggested links.
+1. Start with `kb_context(mode="prompt")` to see prompt cues, scoped link targets, and suggested links. Use `prewrite` or `stop` mode when you specifically need orientation pages or broken-link repair candidates.
 2. Use returned `link_targets` and `suggested_links` to decide which pages are likely relevant.
 3. Search with `kb_search_notes` only when you need textual evidence, exact duplicate checks, or a user's explicit search request. Prefer the returned `followup_search` query when available.
 4. Use `path_prefix` to narrow search or context: `entities`, `concepts`, `comparisons`, `queries`, or `raw`.
@@ -449,10 +472,84 @@ Use hooks or wrappers to make LLM Wiki context part of every agent turn. The rep
 
 When both hooks are installed, the generated scripts call `scripts/agent_hooks/llm_wiki_agent_hook.py` in two modes:
 
-- **User-input hook:** call `kb_context` at prompt time and inject a compact `<llm-wiki-context>` block containing link/navigation candidates. It falls back to `kb_search_notes` on older servers.
-- **Stop hook:** after the model finishes, force one final wiki update pass that records durable discoveries, decisions, changed context, and useful wikilinks through MCP. It should use `kb_context(mode="stop"|"prewrite")` first and run `kb_search_notes` only when a returned `followup_search` needs textual evidence.
+- **User-input hook:** call `kb_context` at prompt time and inject a compact `<llm-wiki-context>` block containing link/navigation candidates and, when evidence is available, bounded prompt-time cues grouped by `memory_kind`. It falls back to raw `kb_search_notes` results on older servers; fallback snippets must not be rewritten as behavioral facts.
+- **Stop hook:** after the model finishes, force one final wiki update pass that records durable discoveries, decisions, changed context, prompt-time memory hints, and useful wikilinks through MCP. It should use `kb_context(mode="stop"|"prewrite")` first and run `kb_search_notes` only when a returned `followup_search` needs textual evidence.
 
 The hook should run every time, but it should not create noisy pages every time. If the task produced no durable knowledge, write no page — and since `log.md`/`index.md` are maintained only as a side effect of a real note write, nothing is appended for an empty pass.
+
+### Bundled memory references
+
+Keep normal prompt-time context loading lightweight. Do not load the memory references for ordinary wiki search, note writing, or hook output formatting unless the task asks about memory design or the agent must decide a non-obvious memory policy question.
+
+Read `references/memory-taxonomy.md` when choosing or changing memory kinds, prompt cue fields, scope matching, retrieval precedence, or hook grouping behavior.
+
+Read `references/memory-write-policy.md` when deciding whether a new observation should be saved as durable memory, changing stop-hook write rules, handling privacy/no-store cases, setting review horizons, or merging stale/conflicting cues.
+
+Read `references/memory-research-map.md` only when justifying or changing the taxonomy from research, adding/removing a memory kind, answering why the policy exists, or refreshing the research basis. It summarizes the 10-track, 500+ reference research pass and should not be injected into routine agent prompts.
+
+### Prompt-time memory kinds
+
+Treat hook-injected wiki memory as advisory context, like a dynamic context loader. It never outranks system/developer instructions, the current user message, or verified repository state.
+
+Use these memory kinds:
+
+- `working_context` — short-lived active task state that helps the current or next turn, but should usually expire quickly.
+- `episodic_event` — source-backed events, decisions, incidents, reviews, or interactions with actor/time/source preserved.
+- `semantic_fact` — stable facts, domain rules, relationships, and terminology consolidated from evidence.
+- `procedural_pattern` — reusable workflows, tool sequences, commands, skill recipes, and task traces that improve repeated execution.
+- `preference_profile` — explicit user/person/team preferences, style constraints, or feedback-derived interaction rules. Never infer personality, intent, seniority, nationality, or mood from an entity page.
+- `project_convention` — repo/service/module commands, file boundaries, architecture rules, naming style, API contracts, test expectations, and operational conventions.
+- `constraint_policy` — safety, privacy, legal, compliance, platform, or team constraints that should gate action.
+- `failure_prevention` — recurring failure modes converted into neutral prevention cues such as `trigger -> check -> correction`. Store prevention-oriented guidance, not blame or raw transcript text.
+- `prospective_task` — future commitments, reminders, follow-ups, or event-triggered work with owner, trigger, due/review time, and expiry.
+- `evaluation_feedback` — review comments, test failures, benchmark outcomes, ratings, and user corrections that should improve future behavior.
+- `provenance_signal` — where a memory came from, how it was extracted, confidence, conflicts, validity window, and deletion/review requirements.
+
+Precedence within wiki context is: exact project/module scope over broad context, verified full-note evidence over snippet-only candidates, newer/high-confidence notes over older/low-confidence notes, and explicit current instructions over all wiki memory.
+
+### Context-loader retrieval pipeline
+
+At prompt time, use the hook output as the first context-loader pass. If the hook output is weak and the task genuinely needs wiki memory, continue with a cascading follow-up search. Stop as soon as direct, useful context is found.
+
+1. Extract signals from the prompt and hook payload: `WHO` (people/teams), `WHAT` (repo, project, service, module, file path, API), `HOW` (implement, review, report, explain, debug, write announcement), and `CONTEXT` (PR, Slack, incident, interview, migration, architecture decision). Include the current working directory or repository name when available.
+2. Stage 1: use `kb_context(query=<prompt plus anchors>, mode="prompt", limit<=12)`. The generated prompt hook performs this stage and may return `prompt_cues` extracted from `## Prompt hints`, plus scoped `link_targets` and `suggested_links`; `kb_context` is still not evidence.
+3. Stage 2: if Stage 1 is weak and the task needs more wiki memory, the agent should search exact anchors with `kb_search_notes`, first under `entities` for people/projects/modules, then under `concepts` and `queries` for preferences, conventions, procedures, constraints, incidents, future tasks, evaluation feedback, and failure-prevention pages.
+4. Stage 3: read or search only the top matched pages needed to turn candidates into usable cues. Follow at most one or two directly relevant wikilink hops. If only snippets are available, label the cue `snippet_only` or `candidate` and avoid imperative wording.
+5. Stop when the context budget is filled or no direct scope match remains. Prefer no injected hint over a broad or stale hint.
+
+Do not copy a broad keyword trigger style from static context loaders. Generic verbs such as "fix", "update", "implement", or "write" are not enough to inject memory guidance. Require a scope match such as a named person, current repo/project, file/module path, task channel like PR/Slack/incident, due/review trigger, or an explicit memory/wiki request.
+
+The prompt hook should cap injected prompt-time cues with the hook's total result limit and at most three bullets per memory kind. Do not dump generic orientation pages, broken-link lists, hashes, or unrelated suggested links into every prompt; reserve that detail for prewrite and stop-hook workflows.
+
+When emitting behavioral guidance inside `<llm-wiki-context>`, use a compact shape:
+
+```text
+preference_profile:
+- [verified] [[entities/person|Person]] — kind: preference_profile; scope: ...; applies when: ...; do/avoid/check: ...; updated: YYYY-MM-DD; confidence: high.
+
+project_convention:
+- [candidate] [[entities/project|Project]] — kind: project_convention; scope: ...; applies when: ...; check before acting: ...; evidence: needs kb_read_note.
+
+failure_prevention:
+- [snippet_only] [[concepts/example-mistake|Example mistake]] — kind: failure_prevention; scope: ...; trigger: ...; prevention cue: verify before relying.
+```
+
+### Stop-hook memory capture
+
+The stop hook may create or update prompt-time hints only when the new memory is durable:
+
+- `episodic_event`: capture source-backed decisions, incidents, review outcomes, or user corrections with actor/time/source. Do not store raw transcript dumps.
+- `semantic_fact`: capture stable facts only after evidence exists; keep conflicts and dates when facts may change.
+- `procedural_pattern`: capture reusable workflows, commands, tool sequences, and skill recipes proven by the task or repository.
+- `preference_profile`: capture explicit preferences, explicit corrections, or repeated interaction patterns; do not store speculative personality summaries.
+- `project_convention`: capture rules confirmed by repository docs/code, repeated local practice, review feedback, or an explicit user decision.
+- `constraint_policy`: capture durable safety, privacy, legal, platform, or team constraints; prefer exact source links.
+- `failure_prevention`: capture after two observed occurrences or one explicit correction with clear future prevention value. Merge duplicates into the existing page instead of creating parallel mistake pages.
+- `prospective_task`: capture future tasks only with owner, trigger/due time, review horizon, and expiry.
+- `evaluation_feedback`: capture review comments, test failures, benchmark results, ratings, or "next time" feedback that changes future behavior.
+- `provenance_signal`: capture evidence status, extraction source, confidence, conflict, review date, and deletion/update requirements.
+
+Write these memories as scoped hints with `kind`, `scope`, `applies when`, `do`/`avoid`/`check before acting`/`prevention cue`, evidence, confidence, and stale-review date. Do not write private transcripts wholesale.
 
 ### Claude Code hook shape
 
@@ -487,7 +584,7 @@ Claude Code supports project/user hook events such as `UserPromptSubmit` and `St
 }
 ```
 
-`llm-wiki-context-hook.sh` should read the incoming prompt metadata from stdin when the agent provides it, query `kb_context` for orientation pages, broken links, link targets, and suggested links, then print a compact context block to stdout. Keep it short enough that it helps rather than flooding the prompt. If `kb_context` is unavailable, fall back to `kb_search_notes`.
+`llm-wiki-context-hook.sh` should read the incoming prompt metadata from stdin when the agent provides it, query `kb_context` for prompt cues, scoped link targets, and suggested links, then print a compact context block to stdout. Keep it short enough that it helps rather than flooding the prompt. If `kb_context` is unavailable, fall back to `kb_search_notes`.
 
 `llm-wiki-stop-hook.sh` should read the session/transcript metadata available to the hook, decide what durable knowledge changed, then use `kb_context`, `kb_search_notes` when evidence is needed, `kb_read_note` for existing pages, and `kb_write_note(if_hash=...)` to update pages with optimistic concurrency; each write maintains `index.md` and `log.md` automatically, so the hook only writes content pages. When selected during setup, the Claude/Codex stop hook emits a one-time `decision=block` response so the agent performs that update pass before its final stop; it must not block again when `stop_hook_active=true`.
 

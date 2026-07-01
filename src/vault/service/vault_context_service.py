@@ -16,6 +16,7 @@ class VaultContextService(FrozenModel):
             + len(graph.broken_links)
             + len(graph.link_targets)
             + len(graph.suggested_links)
+            + len(graph.prompt_cues)
         )
 
         return ContextResult(
@@ -28,4 +29,5 @@ class VaultContextService(FrozenModel):
             broken_links=graph.broken_links,
             link_targets=graph.link_targets,
             suggested_links=graph.suggested_links,
+            prompt_cues=graph.prompt_cues,
         )

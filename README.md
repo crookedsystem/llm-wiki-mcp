@@ -65,7 +65,7 @@ For Obsidian, no separate connector is needed — just **Open folder as vault** 
 uv run llm-wiki
 ```
 
-The default endpoint is `http://127.0.0.1:9999/mcp`. Once the server is up you can check its status with `GET /health`, and the MCP tools expose `kb_read_note`, `kb_search_notes`, `kb_write_note`, `kb_delete_note`, and `kb_push_vault`. Vault/graph counters are available through the REST `GET /metrics` endpoint.
+The default endpoint is `http://127.0.0.1:9999/mcp`. Once the server is up you can check its status with `GET /health`, and the MCP tools expose `kb_read_note`, `kb_search_notes`, `kb_context`, `kb_write_note`, `kb_delete_note`, and `kb_push_vault`. Vault/graph counters are available through the REST `GET /metrics` endpoint.
 
 ### Push the vault to GitHub
 
@@ -97,13 +97,25 @@ The URL resolution order is `--server-url` -> `LLM_WIKI_MCP_URL` -> `KB_HOST`/`K
 
 After setup, restart the agent session to reload the MCP tools, skill, and hook configuration.
 
+### Prompt-time context quickstart
+
+For context-loader-like behavior, the required path is:
+
+1. Start `llm-wiki` with `uv run llm-wiki`.
+2. Run `uv run python scripts/main.py --agent codex` or the matching agent setup command.
+3. Restart the agent so MCP tools, skills, and hooks reload.
+4. Submit a prompt that names a known wiki anchor, such as a project, module, person, PR, Slack, or incident context.
+5. Confirm the injected `<llm-wiki-context>` block uses `kb_context` and treats any `prompt_cues` item as scoped advisory context. New servers group cues by `memory_kind` such as `preference_profile`, `project_convention`, `procedural_pattern`, `failure_prevention`, `prospective_task`, or `evaluation_feedback`.
+
+Prompt-time context is the default hook path. The Stop hook and `kb_push_vault` are optional: Stop records durable discoveries after a task, while push syncs the vault to GitHub only on explicit request or scheduled configuration.
+
 ## How to Work
 
 ### How hooks work
 
 Setup creates `llm-wiki-context-hook.sh` in each agent's hook directory. It creates `llm-wiki-stop-hook.sh` only when the Stop hook prompt is answered with `Y`, and for Claude Code and Codex it merges the selected hook entries into the `UserPromptSubmit`/`Stop` hook configuration. For Hermes/Hermess it installs reusable scripts that you can wire into finalize-style hooks.
 
-The context hook calls `kb_search_notes` at user-input time and prepends relevant wiki snippets in front of the model. When selected, the Stop hook requests an update pass right before completion, asking the model to record only wiki-worthy knowledge. Claude Code and Codex re-invoke the model once with `decision=block`, and they do not block again once `stop_hook_active=true`, avoiding a loop. If the hook helper or `uv` is missing, the hook exits quietly so it does not interfere with the agent run.
+The context hook calls `kb_context` at user-input time and prepends compact wiki navigation context in front of the model; on older servers it falls back to raw `kb_search_notes` snippets. Hook-injected context can include scoped prompt-time memory cues such as explicit preferences, project conventions, reusable procedures, constraints, failure-prevention checks, future tasks, evaluation feedback, and provenance signals, but these cues are advisory and must stay bounded to the current task. When selected, the Stop hook requests an update pass right before completion, asking the model to record only wiki-worthy knowledge. Claude Code and Codex re-invoke the model once with `decision=block`, and they do not block again once `stop_hook_active=true`, avoiding a loop. If the hook helper or `uv` is missing, the hook exits quietly so it does not interfere with the agent run.
 
 ### How agents use the skill
 
@@ -117,8 +129,8 @@ The skill instructs the agent to:
 - Preview destructive deletion with `kb_delete_note(dry_run=true)` first. Actual deletion requires an explicit user request and the exact returned `confirmation_phrase`; referencing pages are not deleted, and approved `reference_cleanup_paths` only remove wikilinks to the deleted note. Actual deletion appends `log.md` and removes the target's `index.md` entry automatically when present.
 - Use `$llm-wiki-push` for explicit GitHub vault sync requests. The main `llm-wiki` skill must not call `kb_push_vault`
 - Use the returned `content_hash` as the next `if_hash` for optimistic concurrency
-- Keep raw sources immutable and update `index.md` and `log.md` for durable wiki changes
-- Use the installed hook commands together with native hooks, plugins, or wrappers: load compact wiki context at user-input time and, when selected during setup, run a stop-time update pass when the agent finishes. Claude Code and Codex share the same `UserPromptSubmit`/`Stop` hook schema (in-loop `decision=block` re-prompt), so setup can wire them when selected. Hermes/Hermess exposes only finalize-style session hooks, so it gets reusable scripts to wire into a plugin/wrapper or finalize hook for an out-of-loop update pass.
+- Keep raw sources immutable; durable content writes through `kb_write_note` maintain `index.md` and `log.md` automatically
+- Use the installed hook commands together with native hooks, plugins, or wrappers: load compact wiki context at user-input time and, when selected during setup, run a stop-time update pass when the agent finishes. Prompt-time cues are scoped by `memory_kind` (`preference_profile`, `project_convention`, `procedural_pattern`, `constraint_policy`, `failure_prevention`, `prospective_task`, `evaluation_feedback`, and related kinds), and current user instructions plus verified repo state override wiki memory. Claude Code and Codex share the same `UserPromptSubmit`/`Stop` hook schema (in-loop `decision=block` re-prompt), so setup can wire them when selected. Hermes/Hermess exposes only finalize-style session hooks, so it gets reusable scripts to wire into a plugin/wrapper or finalize hook for an out-of-loop update pass.
 
 The MCP tools the server currently exposes are `kb_read_note`, `kb_write_note`, `kb_delete_note`, `kb_search_notes`, `kb_context`, and `kb_push_vault`. Vault/graph counters are provided through the REST `GET /metrics` endpoint.
 
@@ -173,6 +185,6 @@ The AI treats the vault as a graph, not just a text-search index.
 3. Narrow with `path_prefix` (`entities`, `concepts`, `comparisons`, `queries`, `raw`).
 4. Follow `[[wikilinks]]` from relevant pages, reading linked pages when they may change the synthesis.
 5. Prefer pages with higher confidence, newer dates, and multiple sources; surface low-confidence or contested pages explicitly.
-6. When an answer becomes a reusable synthesis, file it as a `queries/` or `comparisons/` page and update `index.md` and `log.md`.
+6. When an answer becomes a reusable synthesis, file it as a `queries/` or `comparisons/` page; `kb_write_note` maintains `index.md` and `log.md` automatically.
 
 Because `kb_search_notes` returns snippets rather than whole files, existing-note updates use `kb_read_note` first, patch the complete returned body, and then call `kb_write_note` with `if_hash=content_hash`, a new `updated`, and no `created`. Snippet-only replacement remains forbidden.

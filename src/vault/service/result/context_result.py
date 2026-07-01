@@ -1,3 +1,5 @@
+from pydantic import Field
+
 from common.model import FrozenModel
 from vault.service.command.context_command import ContextMode
 
@@ -32,6 +34,24 @@ class SuggestedLink(FrozenModel):
     followup_search: str
 
 
+class PromptCue(FrozenModel):
+    path: str
+    title: str | None
+    content_hash: str
+    memory_kind: str = "semantic_fact"
+    evidence_status: str = "verified"
+    updated: str | None = None
+    review_after: str | None = None
+    confidence: str | None = None
+    scope: str | None = None
+    applies_when: str | None = None
+    do: str | None = None
+    avoid: str | None = None
+    check_before_acting: str | None = None
+    prevention_cue: str | None = None
+    evidence: str | None = None
+
+
 class EntityGuidance(FrozenModel):
     criteria: list[str]
     preferred_paths: list[str]
@@ -48,3 +68,4 @@ class ContextResult(FrozenModel):
     broken_links: list[BrokenWikiLink]
     link_targets: list[ContextReference]
     suggested_links: list[SuggestedLink]
+    prompt_cues: list[PromptCue] = Field(default_factory=list)
