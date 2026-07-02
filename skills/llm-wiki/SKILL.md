@@ -51,7 +51,7 @@ queries/         # valuable answered questions worth preserving
 
 `raw/` is source material. `entities/`, `concepts/`, `comparisons/`, and `queries/` are synthesized wiki pages owned by the agent.
 
-These five folders are fixed top-level buckets keyed by page **kind** (`type`); never add a sixth top folder for a topic. Inside a top folder, pages default to **flat**, and you add **one** level of subfolders only when a folder grows large and a closed, deterministic key emerges. See `## Folder placement rules` below and `references/folder-structure.md` for the full policy.
+These five folders are fixed top-level buckets keyed by page **kind** (`type`); never add a sixth top folder for a topic. Inside any folder, pages default to **flat**, and subfolders grow **recursively** only when that folder gets large and a closed, deterministic child key emerges. See `## Folder placement rules` below and `references/folder-structure.md` for the full policy.
 
 ## First actions in a session
 
@@ -114,9 +114,10 @@ grouping belongs in tags and the auto-maintained `index.md`, never in the folder
 Every write — new or update — runs this placement algorithm before `kb_write_note`:
 
 1. **Pick the top folder from `type`** (mandatory, unambiguous): `raw/ entities/ concepts/ comparisons/ queries/`.
-2. **Match an existing subfolder.** Check `SCHEMA.md`'s Folder model for a subfolder whose one-line
+2. **Match the deepest existing subfolder.** Check `SCHEMA.md`'s Folder model for a subfolder whose one-line
    membership rule this page satisfies (its repo/project, entity kind, bounded domain, or source
-   type). If one matches → write to `<top>/<subfolder>/<slug>.md`.
+   type). If one or more match → write to the deepest matching path, such as
+   `<top>/<subfolder>/<child-subfolder>/<slug>.md`.
 3. **Otherwise write flat** at `<top>/<slug>.md`. Flat is the default.
 4. **Never invent a subfolder for a single page.** Creating a subfolder is a deliberate reorg, not a
    side effect of one write.
@@ -125,23 +126,29 @@ Every write — new or update — runs this placement algorithm before `kb_write
 
 **Create a subfolder only when ALL four hold** (otherwise keep the folder flat):
 
-- **Volume:** the top folder already holds **more than ~20 pages**.
-- **Cluster:** at least one group has **≥ 5 pages** that clearly belong together (hard floor 3;
-  never subfolder for fewer).
+- **Volume:** the current folder/node already holds **more than ~15–20 direct pages** (overdue by
+  ~30).
+- **Cluster:** the split yields **at least two** child groups, each with **≥ 5 pages** that clearly
+  belong together (hard floor 3; never subfolder for fewer).
 - **Closed key:** the group is defined by a stable, enumerable key you can assign a *future* page to
   without guessing — entity **kind** (`entities/people|products|projects|orgs|standards|models/`),
   **repo/project** scope (`queries/fanplus-api/`, `concepts/fanplus-api/`), **source type**
-  (`raw/articles|transcripts|assets/`), or a **bounded, mutually-exclusive technical domain**
-  (`concepts/kafka/`, `concepts/databases/`) as a fallback. Prefer a repo/project key over a topic
-  key. Never split by an open-ended or overlapping topic.
+  (`raw/articles|transcripts|assets/`), or a **bounded, mutually-exclusive technical domain or
+  subtype** (`concepts/kafka/`, `concepts/database/`, `concepts/database/postgresql/`) as a
+  fallback. Prefer a repo/project key over a topic key. Never split by an open-ended or overlapping
+  topic.
 - **Mutual exclusivity (hesitation test):** every current and expected page maps to exactly one
   group. If a page plausibly fits two folders, create **zero** — keep flat and use tags/links.
 
-When you do split, **relocate every existing sibling that belongs in the new folder in the same
-pass**, record a one-line membership rule in `SCHEMA.md`, and stop at **one** subfolder level (max
-depth two folders from root; never `concepts/databases/mysql/…`). Subfolders never change a page's
-`type` (`entities/products/postgresql.md` is still `type: entity`). Full details, worked examples,
-and the research basis are in `references/folder-structure.md`.
+When you do split, **relocate every existing sibling that belongs in the new child folder in the
+same pass**, record a one-line membership rule in `SCHEMA.md`, and then apply the same node-split
+test recursively to that child as it grows (`concepts/database/` may later become
+`concepts/database/postgresql/`). There is no fixed depth number; each level must be earned by
+volume, a closed discriminating axis, mutual exclusivity, and real warrant. Stop deepening when the
+remaining distinction is an attribute value (version/date/status) rather than a kind; use tags
+instead. Subfolders never change a page's `type` (`entities/products/postgresql.md` is still
+`type: entity`). Full details, worked examples, and the research basis are in
+`references/folder-structure.md`.
 
 ### Relocating misplaced pages
 
@@ -325,10 +332,12 @@ If `SCHEMA.md` is missing or the user is creating a new vault, create it before 
 - `queries/`: durable answers to substantial questions.
 
 These five top folders are fixed and keyed by page kind; do not add a sixth top folder for a topic.
-Pages default to flat inside their top folder. Add **one** level of subfolders only when a folder
-exceeds ~20 pages and a group of ≥5 shares a closed key (entity kind, repo/project, source type, or
-a bounded domain); keep topic grouping in tags/`index.md`/links, not folders. Max depth is two
-folders from root. See `references/folder-structure.md`.
+Pages default to flat inside their current folder. Add subfolders recursively only when the current
+folder exceeds ~15–20 direct pages, the split yields ≥2 child groups of ≥5, and the child key is
+closed and deterministic (entity kind, repo/project, source type, DBMS, bounded domain). Keep topic
+grouping in tags/`index.md`/links, not folders. There is no fixed depth cap; each level must be
+earned by warrant, and deepening stops when the remaining distinction is an attribute value
+(version/date/status) rather than a kind. See `references/folder-structure.md`.
 
 ## Subfolders
 List every subfolder here with a one-line membership rule so placement stays deterministic, e.g.:
