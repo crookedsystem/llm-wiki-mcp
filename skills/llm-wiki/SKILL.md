@@ -162,10 +162,15 @@ survives at the corrected path; nothing is destroyed):
 2. Compute the correct path; if the top folder changes, correct `type` to match.
 3. `kb_write_note(new_path, …)` with the same content (fix `type` if needed, refresh `updated`, keep
    `created`, no `if_hash`); verify it wrote.
-4. Repair inbound `[[old_path]]` links to `[[new_path]]` (find via `kb_context`/`kb_search_notes`,
+4. Repair inbound `[[old_path]]` links to `[[new_path]]` (start with `kb_context`/`kb_search_notes`,
    patch each with `kb_read_note` + `kb_write_note(if_hash=…)`).
-5. `kb_delete_note(old_path, dry_run=true)` then `kb_delete_note(old_path, dry_run=false, confirm=…)`
-   to remove the stale original; `index.md`/`log.md` update automatically.
+5. Call `kb_delete_note(old_path, dry_run=true)` as the **final backlink audit**. Treat every
+   `related_candidates` entry as mandatory relocation work: patch each remaining `[[old_path]]` to
+   `[[new_path]]`, preserving aliases, then dry-run again. Do **not** confirm deletion while the
+   dry-run still reports unresolved backlinks.
+6. Only after the dry-run shows no remaining inbound links, call
+   `kb_delete_note(old_path, dry_run=false, confirm=…)` with the confirmation phrase from that final
+   clean dry-run; `index.md`/`log.md` update automatically.
 
 Relocate only on a **clear, evidenced** violation, only during deliberate write/maintenance work
 (never from a hook or automatic pass), and **ask the user** for genuinely borderline cases. Fixing

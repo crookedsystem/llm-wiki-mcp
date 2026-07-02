@@ -210,12 +210,18 @@ Procedure:
 3. `kb_write_note(new_path, …)` with the same content: fix `type` if the top folder changed, set
    `updated` to now, keep the original `created`, pass **no** `if_hash` (this is a new page). Confirm
    the write succeeded.
-4. **Repair inbound links.** Find pages that link `[[old_path]]` via `kb_context` /
-   `kb_search_notes`, and patch each to `[[new_path]]` with `kb_read_note` + `kb_write_note(if_hash=…)`.
-   Preserve the alias text.
-5. `kb_delete_note(old_path, dry_run=true)` to preview, then
-   `kb_delete_note(old_path, dry_run=false, confirm=<confirmation_phrase>)` to remove the stale
-   original. `index.md` and `log.md` update automatically on both the new write and the delete.
+4. **Repair inbound links.** Start with pages that link `[[old_path]]` via `kb_context` /
+   `kb_search_notes`, and patch each to `[[new_path]]` with `kb_read_note` +
+   `kb_write_note(if_hash=…)`. Preserve the alias text.
+5. **Use delete dry-run as the final backlink audit.** Call `kb_delete_note(old_path, dry_run=true)`
+   after the first repair pass. Its `related_candidates` are authoritative for deletion safety:
+   every candidate still links to `old_path` and must be repaired before the old page is deleted.
+   Patch those candidates to `[[new_path]]`, then run the dry-run again. Repeat until the dry-run
+   returns no remaining inbound-link candidates. Do not use `reference_cleanup_paths` for ordinary
+   relocation, because cleanup removes old links instead of replacing them with the new path.
+6. `kb_delete_note(old_path, dry_run=false, confirm=<confirmation_phrase>)` only with the
+   confirmation phrase from the final clean dry-run. `index.md` and `log.md` update automatically on
+   both the new write and the delete.
 
 Guardrails:
 
