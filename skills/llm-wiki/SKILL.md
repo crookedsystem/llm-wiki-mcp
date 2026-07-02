@@ -39,10 +39,10 @@ Keep these folders conceptually separate:
 Inside `KB_VAULT_PATH`, use this structure:
 
 ```text
-SCHEMA.md        # conventions, page thresholds, tag taxonomy
+SCHEMA.md        # conventions, page thresholds, tag taxonomy, subfolder membership rules
 index.md         # navigational catalog (maintained automatically by kb_write_note)
 log.md           # append-only changelog (maintained automatically by kb_write_note)
-raw/             # immutable source material and assets
+raw/             # immutable source material and assets (subfoldered by source type)
 entities/        # people, orgs, products, models, projects, standards
 concepts/        # ideas, techniques, mechanisms, topics, principles
 comparisons/     # side-by-side analyses and decision records
@@ -50,6 +50,8 @@ queries/         # valuable answered questions worth preserving
 ```
 
 `raw/` is source material. `entities/`, `concepts/`, `comparisons/`, and `queries/` are synthesized wiki pages owned by the agent.
+
+These five folders are fixed top-level buckets keyed by page **kind** (`type`); never add a sixth top folder for a topic. Inside a top folder, pages default to **flat**, and you add **one** level of subfolders only when a folder grows large and a closed, deterministic key emerges. See `## Folder placement rules` below and `references/folder-structure.md` for the full policy.
 
 ## First actions in a session
 
@@ -101,6 +103,67 @@ Use the `type` frontmatter value to decide where a page belongs and how readers 
 | `schema` | `SCHEMA.md` | Vault-wide schema and operating conventions | Topic pages |
 | `index` | `index.md` | Navigational catalog | Research notes |
 | `log` | `log.md` | Append-only audit trail | Topic synthesis |
+
+### Folder placement rules
+
+Choosing the folder is a separate decision from choosing the `type`. The rule of thumb:
+**folder = KIND, filename = WHICH ONE, tags/`index.md`/`[[wikilinks]]` = TOPIC.** A page can live in
+only one folder, so folders must key on a **closed, deterministic property**; open-ended topic
+grouping belongs in tags and the auto-maintained `index.md`, never in the folder tree.
+
+Every write — new or update — runs this placement algorithm before `kb_write_note`:
+
+1. **Pick the top folder from `type`** (mandatory, unambiguous): `raw/ entities/ concepts/ comparisons/ queries/`.
+2. **Match an existing subfolder.** Check `SCHEMA.md`'s Folder model for a subfolder whose one-line
+   membership rule this page satisfies (its repo/project, entity kind, bounded domain, or source
+   type). If one matches → write to `<top>/<subfolder>/<slug>.md`.
+3. **Otherwise write flat** at `<top>/<slug>.md`. Flat is the default.
+4. **Never invent a subfolder for a single page.** Creating a subfolder is a deliberate reorg, not a
+   side effect of one write.
+5. **On update, keep the current path** unless it violates these rules — then relocate it (see
+   "Relocating misplaced pages").
+
+**Create a subfolder only when ALL four hold** (otherwise keep the folder flat):
+
+- **Volume:** the top folder already holds **more than ~20 pages**.
+- **Cluster:** at least one group has **≥ 5 pages** that clearly belong together (hard floor 3;
+  never subfolder for fewer).
+- **Closed key:** the group is defined by a stable, enumerable key you can assign a *future* page to
+  without guessing — entity **kind** (`entities/people|products|projects|orgs|standards|models/`),
+  **repo/project** scope (`queries/fanplus-api/`, `concepts/fanplus-api/`), **source type**
+  (`raw/articles|transcripts|assets/`), or a **bounded, mutually-exclusive technical domain**
+  (`concepts/kafka/`, `concepts/databases/`) as a fallback. Prefer a repo/project key over a topic
+  key. Never split by an open-ended or overlapping topic.
+- **Mutual exclusivity (hesitation test):** every current and expected page maps to exactly one
+  group. If a page plausibly fits two folders, create **zero** — keep flat and use tags/links.
+
+When you do split, **relocate every existing sibling that belongs in the new folder in the same
+pass**, record a one-line membership rule in `SCHEMA.md`, and stop at **one** subfolder level (max
+depth two folders from root; never `concepts/databases/mysql/…`). Subfolders never change a page's
+`type` (`entities/products/postgresql.md` is still `type: entity`). Full details, worked examples,
+and the research basis are in `references/folder-structure.md`.
+
+### Relocating misplaced pages
+
+When you read or prewrite a page whose location breaks the placement rules — its `type` disagrees
+with its top folder, or it sits flat when it clearly belongs in an existing subfolder (or is under
+the wrong repo/kind/domain subfolder) — **fix it**. MCP has no move op, so relocation is
+**write-new-then-delete-old**, a sanctioned narrow exception to the delete policy (the knowledge
+survives at the corrected path; nothing is destroyed):
+
+1. `kb_read_note(old_path)` → full body/fields + `content_hash`.
+2. Compute the correct path; if the top folder changes, correct `type` to match.
+3. `kb_write_note(new_path, …)` with the same content (fix `type` if needed, refresh `updated`, keep
+   `created`, no `if_hash`); verify it wrote.
+4. Repair inbound `[[old_path]]` links to `[[new_path]]` (find via `kb_context`/`kb_search_notes`,
+   patch each with `kb_read_note` + `kb_write_note(if_hash=…)`).
+5. `kb_delete_note(old_path, dry_run=true)` then `kb_delete_note(old_path, dry_run=false, confirm=…)`
+   to remove the stale original; `index.md`/`log.md` update automatically.
+
+Relocate only on a **clear, evidenced** violation, only during deliberate write/maintenance work
+(never from a hook or automatic pass), and **ask the user** for genuinely borderline cases. Fixing
+one misplaced page is not license to re-fold the whole vault — a full re-foldering is a separate,
+explicitly user-approved batch. See `references/folder-structure.md`.
 
 ### Page creation thresholds
 
@@ -165,7 +228,8 @@ contested: false
 
 `title`, `updated`, `type`, `tags`, `sources`, and `body` are required tool arguments. `updated` must be a UTC ISO datetime with seconds and a trailing `Z`, such as `2026-06-09T14:30:05Z`; date-only, non-UTC, offset, and sub-second values are invalid. New notes also require `created` in the same format. When updating an existing note, omit `created`, pass `if_hash`, and change `updated` to the current UTC timestamp; do not preserve the old update timestamp after modifying content, links, or metadata. `confidence` and `contested` are optional but useful. Use `confidence: low` for single-source, speculative, or fast-moving claims. Use `contested: true` when sources conflict and explain the conflict in the body.
 
-Path and type must agree:
+Path and type must agree at the **top-folder** level (subfolders never change `type`, so
+`entities/products/postgresql.md` is still `type: entity`):
 
 - `raw/**` uses `type: raw`.
 - `entities/**` uses `type: entity`.
@@ -260,6 +324,20 @@ If `SCHEMA.md` is missing or the user is creating a new vault, create it before 
 - `comparisons/`: side-by-side analyses and decision records.
 - `queries/`: durable answers to substantial questions.
 
+These five top folders are fixed and keyed by page kind; do not add a sixth top folder for a topic.
+Pages default to flat inside their top folder. Add **one** level of subfolders only when a folder
+exceeds ~20 pages and a group of ≥5 shares a closed key (entity kind, repo/project, source type, or
+a bounded domain); keep topic grouping in tags/`index.md`/links, not folders. Max depth is two
+folders from root. See `references/folder-structure.md`.
+
+## Subfolders
+List every subfolder here with a one-line membership rule so placement stays deterministic, e.g.:
+- `entities/products/`: named third-party software products and tools.
+- `entities/projects/`: repositories/products this vault has code-level knowledge of.
+- `concepts/fanplus-api/`: concepts scoped to the fanplus-api codebase.
+- `raw/transcripts/`: chat/meeting transcripts.
+(Only add a line when the subfolder actually exists; never pre-create empty folders.)
+
 ## Naming
 - Use lowercase kebab-case paths, for example `concepts/llm-wiki.md`.
 - Use `[[wikilinks]]` for internal links.
@@ -351,7 +429,7 @@ Do not hand-author that trailer in the `body` argument unless you are intentiona
 
 Deletion is destructive and must be opt-in for every affected page.
 
-- Do not delete a note unless the user explicitly asks to delete it. General cleanup, archive, merge, dedupe, or "this looks obsolete" language is not enough.
+- Do not delete a note unless the user explicitly asks to delete it. General cleanup, archive, merge, dedupe, or "this looks obsolete" language is not enough. The one exception is **relocation** of a misplaced page (write the corrected path first, verify, repair links, then delete the stale original), which is covered by "Relocating misplaced pages" and does not destroy knowledge; it still uses the full `dry_run` + `confirm` delete flow on the old path.
 - Before deleting anything, call `kb_delete_note(note_path, dry_run=true)` and show the user the target path, related candidates, relationships, evidence, and exact pages that would be deleted.
 - If you believe references in other notes should also be cleaned, ask the user directly before changing those notes. Provide detailed evidence from `related_candidates` and, when needed, `kb_read_note` or `kb_search_notes`; do not infer approval from the graph alone.
 - Referencing pages are never deleted by `kb_delete_note`. Pass `reference_cleanup_paths` only for exact paths the user explicitly approved for reference cleanup.
@@ -362,7 +440,7 @@ Deletion is destructive and must be opt-in for every affected page.
 ## LLM Wiki page flow
 
 1. Capture or identify the source material.
-2. Decide whether it belongs in `raw/` as immutable source, a synthesized page, or both.
+2. Decide whether it belongs in `raw/` as immutable source, a synthesized page, or both. Then run the placement algorithm in `## Folder placement rules` to choose the exact path: top folder from `type`, then an existing subfolder whose `SCHEMA.md` membership rule matches, else flat. While orienting, if you read a page whose folder is clearly wrong, relocate it per "Relocating misplaced pages".
 3. Resolve entity anchors before writing concepts or queries. If the note is project/service/module-specific, identify the matching `entities/` page first.
 4. Call `kb_context(mode="prewrite")` before writing. Repair relevant broken links, reuse existing link targets, and inspect suggested links before creating pages.
 5. Use `kb_search_notes` with `followup_search` when you need evidence for a proposed link, duplicate-page check, alias check, or entity creation decision.
