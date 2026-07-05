@@ -1,8 +1,10 @@
 import re
 from collections import defaultdict
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import mkdtemp
 
 from pydantic import Field
 
@@ -14,7 +16,6 @@ from vault.component.write_queue import VaultWriteQueue
 from vault.entity.vault_note import (
     append_provenance_trailer,
     compute_sha256,
-    strip_provenance_trailer,
 )
 from vault.infrastructure.repository.vault_note_repository import VaultNoteRepository
 from vault.service.command.organize_folders_command import (
@@ -24,11 +25,14 @@ from vault.service.command.organize_folders_command import (
 from vault.service.result.organize_folders_result import FolderMove, OrganizeFoldersResult
 from vault.service.vault_index_service import IndexEntry, VaultIndexService
 from vault.service.vault_log_service import LogEntry, VaultLogService
+from vault.service.vault_operational_note import OperationalNote
 from vault.service.vault_operational_paths import INDEX_NOTE_PATH, LOG_NOTE_PATH
 
 ROOT_FOLDERS = frozenset({"raw", "entities", "concepts", "comparisons", "queries"})
 DIRECT_SPLIT_THRESHOLD = 16
 MIN_CHILD_GROUP_SIZE = 5
+SCHEMA_NOTE_PATH = "SCHEMA.md"
+TEMPORARY_MOVE_DIRECTORY = ".llm-wiki-organize-tmp"
 
 ORGANIZE_FOLDERS_SAFETY_NOTICE = (
     "Folder organization can move many notes and rewrite backlinks. Run dry_run first, inspect "
@@ -85,6 +89,7 @@ _DOMAIN_SCOPE_TAGS = frozenset(
     }
 )
 _LIST_ENTRY_PATTERN = re.compile(r"^\s*-\s+\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?]](.*)$")
+_OPERATIONAL_NOTE_PATHS = (SCHEMA_NOTE_PATH, INDEX_NOTE_PATH, LOG_NOTE_PATH)
 
 
 class _FolderOrganizationNote(FrozenModel):
@@ -153,7 +158,7 @@ class VaultFolderOrganizationService(FrozenModel):
         notes: list[_FolderOrganizationNote] = []
         for note_path in self.note_repository.markdown_notes():
             relative_path = self.note_repository.relative_path(note_path)
-            if relative_path in {INDEX_NOTE_PATH, LOG_NOTE_PATH, "SCHEMA.md"}:
+            if relative_path in _OPERATIONAL_NOTE_PATHS:
                 continue
             content = self.note_repository.read_note(note_path)
             metadata = extract_note_metadata(content)
@@ -357,12 +362,62 @@ class VaultFolderOrganizationService(FrozenModel):
         moves: list[FolderMove],
         notes: list[_FolderOrganizationNote],
     ) -> str:
-        note_by_path = {note.relative_path: note for note in notes}
+        content_hashes = self._confirmation_content_hashes(moves, notes)
         payload = "\n".join(
-            f"{move.old_path}->{move.new_path}@{note_by_path[move.old_path].content_hash}"
-            for move in moves
+            [
+                *(f"{move.old_path}->{move.new_path}" for move in moves),
+                *(f"{path}@{content_hash}" for path, content_hash in content_hashes.items()),
+            ]
         )
         return f"ORGANIZE_FOLDERS: {compute_sha256(payload)}"
+
+    def _confirmation_content_hashes(
+        self,
+        moves: list[FolderMove],
+        notes: list[_FolderOrganizationNote],
+    ) -> dict[str, str]:
+        move_paths = {move.old_path for move in moves}
+        replacements = _path_replacements(moves)
+        stem_replacements = _stem_replacements(moves, self._target_paths_for_link_rewrites(notes))
+        hashes = {
+            note.relative_path: note.content_hash
+            for note in notes
+            if note.relative_path in move_paths
+            or self._would_rewrite_backlinks(note, replacements, stem_replacements)
+        }
+        for path in ("SCHEMA.md", INDEX_NOTE_PATH, LOG_NOTE_PATH):
+            hashes[path] = self._operational_file_hash(path)
+        return dict(sorted(hashes.items()))
+
+    def _would_rewrite_backlinks(
+        self,
+        note: _FolderOrganizationNote,
+        replacements: dict[str, str],
+        stem_replacements: dict[str, str],
+    ) -> bool:
+        return (
+            _replace_wiki_links(
+                note.content,
+                replacements,
+                stem_replacements,
+            )
+            != note.content
+        )
+
+    def _operational_file_hash(self, relative_path: str) -> str:
+        path = self.note_repository.vault_root / relative_path
+        if not path.exists():
+            return "<missing>"
+        return compute_sha256(path.read_text(encoding="utf-8"))
+
+    def _target_paths_for_link_rewrites(self, notes: list[_FolderOrganizationNote]) -> list[str]:
+        target_paths = [note.relative_path for note in notes]
+        target_paths.extend(
+            path
+            for path in _OPERATIONAL_NOTE_PATHS
+            if (self.note_repository.vault_root / path).exists()
+        )
+        return target_paths
 
     def _created_folders(self, moves: list[FolderMove]) -> list[str]:
         folders = {
@@ -379,13 +434,14 @@ class VaultFolderOrganizationService(FrozenModel):
     ) -> list[str]:
         snapshots = self._snapshots_for_apply(moves)
         try:
-            updated_paths = self._rewrite_backlinks(moves)
+            target_paths = self._target_paths_for_link_rewrites(notes)
+            updated_paths = self._rewrite_backlinks(moves, target_paths)
             moved_paths = self._move_note_files(moves)
             updated_paths.extend(moved_paths)
             updated_paths.extend(self._update_index(moves, notes))
-            updated_paths.extend(self._update_schema(moves))
+            updated_paths.extend(self._update_schema(moves, target_paths))
             updated_paths.extend(self._update_log(moves, notes))
-            self._remove_empty_directories()
+            self._remove_empty_move_directories(moves)
             return sorted(set(updated_paths))
         except Exception:
             self._restore_snapshots(snapshots)
@@ -396,7 +452,7 @@ class VaultFolderOrganizationService(FrozenModel):
         for move in moves:
             paths.add(self.note_repository.vault_root / move.old_path)
             paths.add(self.note_repository.vault_root / move.new_path)
-        for operational_path in ("SCHEMA.md", INDEX_NOTE_PATH, LOG_NOTE_PATH):
+        for operational_path in _OPERATIONAL_NOTE_PATHS:
             paths.add(self.note_repository.vault_root / operational_path)
         return [self._snapshot_path(path) for path in sorted(paths)]
 
@@ -412,22 +468,17 @@ class VaultFolderOrganizationService(FrozenModel):
             snapshot.path.parent.mkdir(parents=True, exist_ok=True)
             snapshot.path.write_text(snapshot.content, encoding="utf-8")
 
-    def _rewrite_backlinks(self, moves: list[FolderMove]) -> list[str]:
-        replacements = {move.old_path: move.new_path for move in moves}
-        old_stem_replacements = {
-            Path(move.old_path).stem: move.new_path
-            for move in moves
-            if sum(
-                1
-                for candidate in moves
-                if Path(candidate.old_path).stem == Path(move.old_path).stem
-            )
-            == 1
-        }
+    def _rewrite_backlinks(
+        self,
+        moves: list[FolderMove],
+        target_paths: list[str],
+    ) -> list[str]:
+        replacements = _path_replacements(moves)
+        old_stem_replacements = _stem_replacements(moves, target_paths)
         updated_paths: list[str] = []
         for note_path in self.note_repository.markdown_notes():
             relative_path = self.note_repository.relative_path(note_path)
-            if relative_path == INDEX_NOTE_PATH:
+            if relative_path in {INDEX_NOTE_PATH, SCHEMA_NOTE_PATH}:
                 continue
             content = note_path.read_text(encoding="utf-8")
             updated = _replace_wiki_links(content, replacements, old_stem_replacements)
@@ -439,13 +490,46 @@ class VaultFolderOrganizationService(FrozenModel):
 
     def _move_note_files(self, moves: list[FolderMove]) -> list[str]:
         moved_paths: list[str] = []
-        for move in moves:
-            old_path = self.note_repository.vault_root / move.old_path
-            new_path = self.note_repository.vault_root / move.new_path
-            new_path.parent.mkdir(parents=True, exist_ok=True)
-            old_path.rename(new_path)
-            moved_paths.append(move.new_path)
+        temporary_paths = self._temporary_move_paths(moves)
+        try:
+            for move in moves:
+                old_path = self.note_repository.vault_root / move.old_path
+                temporary_path = temporary_paths[move.old_path]
+                temporary_path.parent.mkdir(parents=True, exist_ok=True)
+                old_path.rename(temporary_path)
+            for move in moves:
+                temporary_path = temporary_paths[move.old_path]
+                new_path = self.note_repository.vault_root / move.new_path
+                new_path.parent.mkdir(parents=True, exist_ok=True)
+                temporary_path.rename(new_path)
+                moved_paths.append(move.new_path)
+        finally:
+            self._remove_temporary_move_directory(temporary_paths)
         return moved_paths
+
+    def _temporary_move_paths(self, moves: list[FolderMove]) -> dict[str, Path]:
+        temporary_root = self._create_temporary_move_root()
+        return {
+            move.old_path: temporary_root / f"{index}-{Path(move.old_path).name}"
+            for index, move in enumerate(moves)
+        }
+
+    def _create_temporary_move_root(self) -> Path:
+        temporary_base = self.note_repository.vault_root / TEMPORARY_MOVE_DIRECTORY
+        temporary_base.mkdir(parents=True, exist_ok=True)
+        return Path(mkdtemp(dir=temporary_base))
+
+    def _remove_temporary_move_directory(self, temporary_paths: dict[str, Path]) -> None:
+        for path in temporary_paths.values():
+            path.unlink(missing_ok=True)
+        temporary_roots = {path.parent for path in temporary_paths.values()}
+        for path in sorted(temporary_roots, key=lambda item: len(item.parts), reverse=True):
+            try:
+                path.rmdir()
+            except OSError:
+                continue
+        with suppress(OSError):
+            (self.note_repository.vault_root / TEMPORARY_MOVE_DIRECTORY).rmdir()
 
     def _update_index(
         self,
@@ -459,21 +543,27 @@ class VaultFolderOrganizationService(FrozenModel):
 
         updated = TimeHelper.format_utc_timestamp(self.clock(), field_name="organize timestamp")
         note_by_path = {note.relative_path: note for note in notes}
+        summary_by_old_slug: dict[str, str | None] = {}
+        for move in moves:
+            old_slug = Path(move.old_path).with_suffix("").as_posix()
+            summary_by_old_slug[old_slug] = _index_summary(existing, old_slug)
+
         current = existing
+        for move in moves:
+            old_slug = Path(move.old_path).with_suffix("").as_posix()
+            current = (
+                self.index_service.remove_entry(current, slug=old_slug, updated=updated) or current
+            )
         for move in moves:
             old_slug = Path(move.old_path).with_suffix("").as_posix()
             new_slug = Path(move.new_path).with_suffix("").as_posix()
             note = note_by_path[move.old_path]
-            summary = _index_summary(current, old_slug)
-            current = (
-                self.index_service.remove_entry(current, slug=old_slug, updated=updated) or current
-            )
             current = self.index_service.upsert_entry(
                 current,
                 IndexEntry(
                     slug=new_slug,
                     title=note.title or Path(move.new_path).stem,
-                    summary=summary,
+                    summary=summary_by_old_slug[old_slug],
                     section=_SECTION_BY_ROOT[Path(move.new_path).parts[0]],
                     updated=updated,
                 ),
@@ -484,22 +574,28 @@ class VaultFolderOrganizationService(FrozenModel):
         self._persist_operational(index_path, current)
         return [INDEX_NOTE_PATH]
 
-    def _update_schema(self, moves: list[FolderMove]) -> list[str]:
+    def _update_schema(self, moves: list[FolderMove], target_paths: list[str]) -> list[str]:
         rules = self._subfolder_rules(moves)
-        if not rules:
-            return []
-
-        schema_path = self.note_repository.vault_root / "SCHEMA.md"
-        existing = (
-            strip_provenance_trailer(schema_path.read_text(encoding="utf-8"))
+        schema_path = self.note_repository.vault_root / SCHEMA_NOTE_PATH
+        timestamp = TimeHelper.format_utc_timestamp(self.clock(), field_name="organize timestamp")
+        note = (
+            OperationalNote.parse(schema_path.read_text(encoding="utf-8"))
             if schema_path.exists()
-            else None
+            else _seed_schema(timestamp)
         )
-        updated = _append_schema_rules(existing, rules)
-        if updated == existing:
+        body = _replace_wiki_links(
+            note.body,
+            _path_replacements(moves),
+            _stem_replacements(moves, target_paths),
+        )
+        body = _append_schema_rules(body, rules)
+        if body == note.body:
             return []
-        self._persist_operational(schema_path, updated)
-        return ["SCHEMA.md"]
+        self._persist_operational(
+            schema_path,
+            note.with_body(body).with_updated(timestamp).render(),
+        )
+        return [SCHEMA_NOTE_PATH]
 
     def _subfolder_rules(self, moves: list[FolderMove]) -> dict[str, str]:
         rules: dict[str, str] = {}
@@ -549,12 +645,8 @@ class VaultFolderOrganizationService(FrozenModel):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(final_content, encoding="utf-8")
 
-    def _remove_empty_directories(self) -> None:
-        for path in sorted(self.note_repository.vault_root.rglob("*"), reverse=True):
-            if not path.is_dir() or path == self.note_repository.vault_root:
-                continue
-            if path.parent == self.note_repository.vault_root and path.name in ROOT_FOLDERS:
-                continue
+    def _remove_empty_move_directories(self, moves: list[FolderMove]) -> None:
+        for path in _old_parent_directories(self.note_repository.vault_root, moves):
             try:
                 path.rmdir()
             except OSError:
@@ -575,6 +667,24 @@ def _first_matching_key(
 ) -> str | None:
     matched = [key for key, values in keyed_tags if set(tags).intersection(values)]
     return matched[0] if len(matched) == 1 else None
+
+
+def _path_replacements(moves: list[FolderMove]) -> dict[str, str]:
+    return {move.old_path: move.new_path for move in moves}
+
+
+def _stem_replacements(
+    moves: list[FolderMove],
+    target_paths: list[str],
+) -> dict[str, str]:
+    stem_counts: dict[str, int] = defaultdict(int)
+    for target_path in target_paths:
+        stem_counts[Path(target_path).stem] += 1
+    return {
+        Path(move.old_path).stem: move.new_path
+        for move in moves
+        if stem_counts[Path(move.old_path).stem] == 1
+    }
 
 
 def _replace_wiki_links(
@@ -612,16 +722,7 @@ def _index_summary(index_content: str, slug: str) -> str | None:
     return None
 
 
-def _append_schema_rules(existing: str | None, rules: dict[str, str]) -> str:
-    if existing is None:
-        body = [
-            "# Wiki Schema",
-            "",
-            "## Subfolders",
-            *[_schema_rule_line(folder, rule) for folder, rule in rules.items()],
-        ]
-        return "\n".join(body) + "\n"
-
+def _append_schema_rules(existing: str, rules: dict[str, str]) -> str:
     lines = existing.splitlines()
     missing_lines = [
         _schema_rule_line(folder, rule)
@@ -676,3 +777,26 @@ def _membership_rule(folder: str) -> str:
     if root == "comparisons":
         return f"Comparison and decision notes scoped to `{key}`."
     return f"Notes assigned to `{key}` by a deterministic folder organization rule."
+
+
+def _seed_schema(timestamp: str) -> OperationalNote:
+    frontmatter = (
+        "title: Wiki Schema\n"
+        f'created: "{timestamp}"\n'
+        f'updated: "{timestamp}"\n'
+        "type: schema\n"
+        "tags:\n"
+        "  - llm-wiki\n"
+        "sources: []"
+    )
+    return OperationalNote(frontmatter=frontmatter, body="\n# Wiki Schema\n\n## Subfolders\n")
+
+
+def _old_parent_directories(vault_root: Path, moves: list[FolderMove]) -> list[Path]:
+    candidates: set[Path] = set()
+    for move in moves:
+        parent = vault_root / Path(move.old_path).parent
+        while parent != vault_root and parent.parent != vault_root:
+            candidates.add(parent)
+            parent = parent.parent
+    return sorted(candidates, key=lambda path: len(path.parts), reverse=True)
