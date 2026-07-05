@@ -78,6 +78,16 @@ class DeleteToolResult(TypedDict):
     safety_notice: str
 
 
+class OrganizeFoldersToolResult(TypedDict):
+    dry_run: bool
+    applied: bool
+    moves: list[dict[str, str]]
+    created_folders: list[str]
+    updated_paths: list[str]
+    confirmation_phrase: str
+    safety_notice: str
+
+
 def test_mcp_server는_기본_http_설정을_사용한다(tmp_path: Path) -> None:
     # Given: 기본 Settings로 MCP server를 생성한다.
     app_settings = Settings(host="127.0.0.1", vault_path=tmp_path / "vault")
@@ -90,6 +100,7 @@ def test_mcp_server는_기본_http_설정을_사용한다(tmp_path: Path) -> Non
         runtime.context_service,
         runtime.git_push_service,
         runtime.delete_service,
+        runtime.folder_organization_service,
     )
 
     # When: FastMCP HTTP 설정을 조회한다.
@@ -117,6 +128,7 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
             runtime.context_service,
             runtime.git_push_service,
             runtime.delete_service,
+            runtime.folder_organization_service,
         )
 
         # When: 등록된 tool 목록을 조회하고 write/search tool을 호출한다.
@@ -155,6 +167,7 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
             "kb_read_note",
             "kb_write_note",
             "kb_delete_note",
+            "kb_organize_folders",
             "kb_search_notes",
             "kb_context",
             "kb_push_vault",
@@ -172,6 +185,11 @@ def test_mcp_server는_write_search_push_tool을_노출하고_description을_제
             tool_by_name["kb_delete_note"].description or ""
         )
         assert "appends log.md" in (tool_by_name["kb_delete_note"].description or "")
+        assert "folder organization" in (tool_by_name["kb_organize_folders"].description or "")
+        assert (
+            tool_by_name["kb_organize_folders"].inputSchema["properties"]["dry_run"]["default"]
+            is True
+        )
         assert "Search Markdown notes" in (tool_by_name["kb_search_notes"].description or "")
         assert "wiki link context map" in (tool_by_name["kb_context"].description or "")
         assert "push origin to the current branch" in (
@@ -232,6 +250,7 @@ def test_mcp_delete_tool은_dry_run에서_참조_정리_후보와_confirmation�
             runtime.context_service,
             runtime.git_push_service,
             runtime.delete_service,
+            runtime.folder_organization_service,
         )
 
         # When: 삭제 tool을 기본 dry_run으로 호출한다.
@@ -275,6 +294,7 @@ def test_mcp_delete_tool은_dry_run에서_log와_index를_변경하지_않는다
             runtime.context_service,
             runtime.git_push_service,
             runtime.delete_service,
+            runtime.folder_organization_service,
         )
         await server.call_tool(
             "kb_write_note",
@@ -328,6 +348,7 @@ def test_mcp_delete_tool은_index를_참조_정리_대상으로_받지_않는다
             runtime.context_service,
             runtime.git_push_service,
             runtime.delete_service,
+            runtime.folder_organization_service,
         )
         await server.call_tool(
             "kb_write_note",
@@ -372,6 +393,7 @@ def test_mcp_delete_tool은_실제_삭제를_log에_기록하고_index에서_제
             runtime.context_service,
             runtime.git_push_service,
             runtime.delete_service,
+            runtime.folder_organization_service,
         )
         await server.call_tool(
             "kb_write_note",
@@ -450,6 +472,7 @@ def test_mcp_delete_tool은_confirmation이_정확할_때만_명시된_참조를
             runtime.context_service,
             runtime.git_push_service,
             runtime.delete_service,
+            runtime.folder_organization_service,
         )
 
         # When / Then: confirmation 없이 실제 삭제를 요청하면 차단된다.
@@ -531,6 +554,7 @@ def test_mcp_delete_tool은_dry_run_이후_내용이_바뀌면_기존_confirmati
             runtime.context_service,
             runtime.git_push_service,
             runtime.delete_service,
+            runtime.folder_organization_service,
         )
 
         # When: dry_run 이후 참조 정리 대상 note 내용이 바뀐다.
@@ -580,6 +604,7 @@ def test_mcp_server는_write_time의_초단위_UTC_Z_datetime을_검증한다(
             runtime.context_service,
             runtime.git_push_service,
             runtime.delete_service,
+            runtime.folder_organization_service,
         )
 
         # When / Then: date-only time는 write tool validator에서 거부된다.
@@ -615,6 +640,7 @@ def test_mcp_server는_existing_note_update에서_created를_거부한다(tmp_pa
             runtime.context_service,
             runtime.git_push_service,
             runtime.delete_service,
+            runtime.folder_organization_service,
         )
         _, write_result = await server.call_tool(
             "kb_write_note",
@@ -716,6 +742,7 @@ def test_mcp_push_tool은_vault_변경사항을_commit하고_push한다(
             runtime.context_service,
             runtime.git_push_service,
             runtime.delete_service,
+            runtime.folder_organization_service,
         )
 
         # When: kb_push_vault tool을 호출한다.

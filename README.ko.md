@@ -19,6 +19,7 @@ Git으로 관리되는 Obsidian/Markdown LLM Wiki vault를 위한 MCP 서버입�
 - `kb_search_notes` MCP tool을 통한 LLM Wiki Markdown 검색
 - `kb_read_note` + `kb_write_note(if_hash=...)`를 통한 안전한 full-note update flow
 - `kb_delete_note` MCP tool을 통한 명시 confirmation 기반 note 삭제와 log/index 자동 유지보수
+- `kb_organize_folders` MCP tool을 통한 명시 confirmation 기반 folder 재구성과 backlink/schema/index/log 자동 유지보수
 
 ## How to Start
 
@@ -62,7 +63,7 @@ Obsidian은 별도 connector 없이 **Open folder as vault**로 `KB_VAULT_PATH`�
 uv run llm-wiki
 ```
 
-기본 endpoint는 `http://127.0.0.1:9999/mcp`입니다. 서버가 뜬 뒤 `GET /health`로 상태를 확인할 수 있고, MCP tool은 `kb_read_note`, `kb_search_notes`, `kb_write_note`, `kb_delete_note`, `kb_context`, `kb_push_vault`를 노출합니다. Vault/graph counter는 REST `GET /metrics`에서 확인합니다.
+기본 endpoint는 `http://127.0.0.1:9999/mcp`입니다. 서버가 뜬 뒤 `GET /health`로 상태를 확인할 수 있고, MCP tool은 `kb_read_note`, `kb_search_notes`, `kb_write_note`, `kb_delete_note`, `kb_organize_folders`, `kb_context`, `kb_push_vault`를 노출합니다. Vault/graph counter는 REST `GET /metrics`에서 확인합니다.
 
 ### Hook setup 방법
 
@@ -112,11 +113,12 @@ Skill은 agent에게 다음을 지시합니다:
 - `kb_search_notes`는 전체 파일 읽기가 아니라 snippet 검색으로 취급. 기존 note 업데이트는 `kb_read_note`로 full structured body와 `content_hash`를 읽고, 그 hash를 `if_hash`로 넘겨 `kb_write_note`를 호출
 - `kb_write_note`를 통해 완전한 Markdown note 작성
 - 삭제는 먼저 `kb_delete_note(dry_run=true)`로 대상과 참조 정리 후보 근거를 확인. 실제 삭제는 사용자의 명시 요청과 반환된 `confirmation_phrase`의 정확한 전달이 필요하며, `reference_cleanup_paths`는 해당 page를 삭제하지 않고 삭제 대상 note를 가리키는 wikilink만 제거함. 실제 삭제 시 `log.md`에 기록하고 대상의 `index.md` entry를 자동 제거함
+- 구조적 folder 재구성은 먼저 `kb_organize_folders(dry_run=true)`로 이동 계획을 확인. 실제 정리는 반환된 `confirmation_phrase`의 정확한 전달이 필요하며, deterministic case만 이동하고 backlink, `SCHEMA.md` subfolder rule, index entry, log를 함께 갱신함
 - optimistic concurrency를 위해 반환된 `content_hash`를 다음 `if_hash`로 사용
 - raw source는 immutable하게 유지하고, durable content write는 `kb_write_note`를 통해 `index.md`와 `log.md`를 자동 유지
 - 설치된 hook command를 native hook, plugin, wrapper와 함께 사용: 사용자 input 시점에는 compact wiki context를 로드하고, setup에서 선택한 경우 agent 종료 시점에는 stop-time update pass 실행. Prompt-time cue는 `preference_profile`, `project_convention`, `procedural_pattern`, `constraint_policy`, `failure_prevention`, `prospective_task`, `evaluation_feedback` 같은 `memory_kind`로 scope를 좁히고, 현재 사용자 지시와 검증된 repo 상태가 wiki memory보다 우선합니다. Claude Code와 Codex는 동일한 `UserPromptSubmit`/`Stop` hook schema(in-loop `decision=block` 재프롬프트)를 공유하므로 선택된 경우 setup이 연결할 수 있습니다. Hermes/Hermess는 finalize 계열 session hook만 제공하므로, plugin/wrapper나 finalize hook에 연결해 out-of-loop update pass를 돌리도록 재사용 script를 설치합니다.
 
-현재 서버가 노출하는 MCP tool은 `kb_read_note`, `kb_write_note`, `kb_delete_note`, `kb_search_notes`, `kb_context`, `kb_push_vault`입니다. Vault/graph counter는 REST `GET /metrics` endpoint로 제공합니다.
+현재 서버가 노출하는 MCP tool은 `kb_read_note`, `kb_write_note`, `kb_delete_note`, `kb_organize_folders`, `kb_search_notes`, `kb_context`, `kb_push_vault`입니다. Vault/graph counter는 REST `GET /metrics` endpoint로 제공합니다.
 
 ## Vault Structure
 

@@ -19,6 +19,7 @@ MCP server for a Git-backed Obsidian/Markdown LLM Wiki vault.
 - LLM Wiki Markdown search through the `kb_search_notes` MCP tool
 - Safe full-note update flow through `kb_read_note` + `kb_write_note(if_hash=...)`
 - Explicit-confirmation note deletion through the `kb_delete_note` MCP tool with automatic log/index maintenance
+- Explicit-confirmation folder reorganization through the `kb_organize_folders` MCP tool with backlink, schema, index, and log maintenance
 - Manual vault commit/push through the `kb_push_vault` MCP tool
 - Optional background vault push every random 30-60 minutes when `KB_GITHUB_PUSH_ENABLED=true`
 
@@ -65,7 +66,7 @@ For Obsidian, no separate connector is needed — just **Open folder as vault** 
 uv run llm-wiki
 ```
 
-The default endpoint is `http://127.0.0.1:9999/mcp`. Once the server is up you can check its status with `GET /health`, and the MCP tools expose `kb_read_note`, `kb_search_notes`, `kb_context`, `kb_write_note`, `kb_delete_note`, and `kb_push_vault`. Vault/graph counters are available through the REST `GET /metrics` endpoint.
+The default endpoint is `http://127.0.0.1:9999/mcp`. Once the server is up you can check its status with `GET /health`, and the MCP tools expose `kb_read_note`, `kb_search_notes`, `kb_context`, `kb_write_note`, `kb_delete_note`, `kb_organize_folders`, and `kb_push_vault`. Vault/graph counters are available through the REST `GET /metrics` endpoint.
 
 ### Push the vault to GitHub
 
@@ -127,12 +128,13 @@ The skill instructs the agent to:
 - Treat `kb_search_notes` as snippet search rather than full file reads. Existing-note updates use `kb_read_note` to retrieve the full structured body and `content_hash`, then `kb_write_note` with that hash as `if_hash`
 - Write complete Markdown notes through `kb_write_note`
 - Preview destructive deletion with `kb_delete_note(dry_run=true)` first. Actual deletion requires an explicit user request and the exact returned `confirmation_phrase`; referencing pages are not deleted, and approved `reference_cleanup_paths` only remove wikilinks to the deleted note. Actual deletion appends `log.md` and removes the target's `index.md` entry automatically when present.
+- Preview structural folder reorganization with `kb_organize_folders(dry_run=true)` first. Actual organization requires the exact returned `confirmation_phrase`; it moves only deterministic cases, rewrites backlinks, adds `SCHEMA.md` subfolder rules, moves index entries, and logs each move.
 - Use `$llm-wiki-push` for explicit GitHub vault sync requests. The main `llm-wiki` skill must not call `kb_push_vault`
 - Use the returned `content_hash` as the next `if_hash` for optimistic concurrency
 - Keep raw sources immutable; durable content writes through `kb_write_note` maintain `index.md` and `log.md` automatically
 - Use the installed hook commands together with native hooks, plugins, or wrappers: load compact wiki context at user-input time and, when selected during setup, run a stop-time update pass when the agent finishes. Prompt-time cues are scoped by `memory_kind` (`preference_profile`, `project_convention`, `procedural_pattern`, `constraint_policy`, `failure_prevention`, `prospective_task`, `evaluation_feedback`, and related kinds), and current user instructions plus verified repo state override wiki memory. Claude Code and Codex share the same `UserPromptSubmit`/`Stop` hook schema (in-loop `decision=block` re-prompt), so setup can wire them when selected. Hermes/Hermess exposes only finalize-style session hooks, so it gets reusable scripts to wire into a plugin/wrapper or finalize hook for an out-of-loop update pass.
 
-The MCP tools the server currently exposes are `kb_read_note`, `kb_write_note`, `kb_delete_note`, `kb_search_notes`, `kb_context`, and `kb_push_vault`. Vault/graph counters are provided through the REST `GET /metrics` endpoint.
+The MCP tools the server currently exposes are `kb_read_note`, `kb_write_note`, `kb_delete_note`, `kb_organize_folders`, `kb_search_notes`, `kb_context`, and `kb_push_vault`. Vault/graph counters are provided through the REST `GET /metrics` endpoint.
 
 ## Vault Structure
 
