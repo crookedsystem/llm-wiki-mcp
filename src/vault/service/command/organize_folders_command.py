@@ -28,6 +28,9 @@ class OrganizeFoldersCommand(FrozenModel):
 
     @model_validator(mode="after")
     def _validate_contract(self) -> "OrganizeFoldersCommand":
+        # Defense-in-depth: FolderOrganizationRoot already restricts root_folder to a
+        # fixed Literal set, so this guard is unreachable today. It is kept so widening
+        # the type later cannot silently reintroduce a path-traversal segment.
         if isinstance(self.root_folder, str) and ".." in Path(self.root_folder).parts:
             raise ValueError("root_folder must not contain parent directory segments")
         return self

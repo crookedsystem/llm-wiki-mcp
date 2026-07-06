@@ -46,7 +46,8 @@ ORGANIZE_TIMESTAMP_FIELD = "organize timestamp"
 ORGANIZE_FOLDERS_SAFETY_NOTICE = (
     "Folder organization can move many notes and rewrite backlinks. Run dry_run first, inspect "
     "every move, then pass the exact confirmation_phrase only when the proposed reorganization "
-    "is acceptable."
+    "is acceptable. In-process failures roll back automatically; if the process is killed "
+    "mid-apply, recover any leftover notes from the .llm-wiki-organize-tmp/ staging directory."
 )
 
 _OPERATIONAL_NOTE_PATHS = (SCHEMA_NOTE_PATH, INDEX_NOTE_PATH, LOG_NOTE_PATH)
@@ -145,13 +146,22 @@ class VaultFolderOrganizationService(FrozenModel):
     ) -> None:
         old_paths = {move.old_path for move in moves}
         existing_paths = {note.relative_path for note in notes}
-        seen_destinations: set[str] = set()
+        # Name the colliding sources in the error so the caller can resolve the
+        # conflict (rename one note) instead of guessing which notes clashed.
+        destination_source: dict[str, str] = {}
         for move in moves:
-            if move.new_path in seen_destinations:
-                raise ValueError(f"folder organization destination is duplicated: {move.new_path}")
-            seen_destinations.add(move.new_path)
+            previous_source = destination_source.get(move.new_path)
+            if previous_source is not None:
+                raise ValueError(
+                    "folder organization destination is duplicated: "
+                    f"{move.new_path} <- {previous_source}, {move.old_path}"
+                )
+            destination_source[move.new_path] = move.old_path
             if move.new_path in existing_paths and move.new_path not in old_paths:
-                raise ValueError(f"folder organization destination already exists: {move.new_path}")
+                raise ValueError(
+                    "folder organization destination already exists: "
+                    f"{move.new_path} <- {move.old_path}"
+                )
 
     def _confirmation_phrase(
         self,
@@ -275,6 +285,10 @@ class VaultFolderOrganizationService(FrozenModel):
         updated_paths: list[str] = []
         for note_path in self.note_repository.markdown_notes():
             relative_path = self.note_repository.relative_path(note_path)
+            # index.md and SCHEMA.md are rewritten by their dedicated updaters
+            # (_update_index/_update_schema). log.md is intentionally rewritten here
+            # so its historical backlinks stay valid before _update_log appends new
+            # entries.
             if relative_path in {INDEX_NOTE_PATH, SCHEMA_NOTE_PATH}:
                 continue
             content = note_path.read_text(encoding="utf-8")

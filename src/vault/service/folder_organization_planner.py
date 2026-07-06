@@ -7,8 +7,14 @@ from vault.service.command.organize_folders_command import FolderOrganizationRoo
 from vault.service.result.organize_folders_result import FolderMove
 
 ROOT_FOLDERS = frozenset({"raw", "entities", "concepts", "comparisons", "queries"})
+# A folder is only split into subfolders once it holds this many direct notes, so
+# small folders stay flat and browsable.
 DIRECT_SPLIT_THRESHOLD = 16
+# A candidate subfolder is created only when at least this many notes share its key,
+# avoiding one-off folders that add depth without grouping value.
 MIN_CHILD_GROUP_SIZE = 5
+# Upper bound on recursive subfolder-splitting passes; guards against pathological
+# inputs while still allowing a few levels of nesting to settle.
 MAX_SUBFOLDER_SPLIT_PASSES = 5
 
 _ROOT_BY_TYPE: dict[str, str] = {
