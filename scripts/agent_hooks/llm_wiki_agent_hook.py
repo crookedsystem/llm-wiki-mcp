@@ -91,8 +91,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--timeout",
         type=float,
-        default=float(os.environ.get("LLM_WIKI_HOOK_TIMEOUT", "4")),
-        help="MCP call timeout in seconds",
+        default=float(os.environ.get("LLM_WIKI_HOOK_TIMEOUT", "3")),
+        help="Whole-operation MCP budget in seconds (shared by kb_context + fallback)",
     )
     parser.add_argument(
         "--block-json",

@@ -360,6 +360,47 @@ def test_load_context는_kb_context_실패나_legacy_schema면_search_notes로_f
         assert payload == {"query": "fallback", "count": 0, "results": []}
 
 
+def test_load_context는_context와_fallback가_타임아웃_예산을_공유한다(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    # Regression: against an unreachable server the kb_context attempt and its
+    # kb_search_notes fallback must SHARE the budget. Before the shared deadline
+    # each call hung for the full timeout, doubling wall-clock and letting the
+    # UserPromptSubmit hook overrun Claude Code's outer timeout (silent SIGKILL).
+    async def hanging_context(**kwargs: object) -> dict[str, object]:
+        await asyncio.sleep(10)
+        return {}
+
+    async def hanging_search(**kwargs: object) -> dict[str, object]:
+        await asyncio.sleep(10)
+        return {}
+
+    monkeypatch.setattr("agent_hooks.llm_wiki_context_client.context_notes", hanging_context)
+    monkeypatch.setattr("agent_hooks.llm_wiki_context_client.search_notes", hanging_search)
+
+    async def run() -> float:
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        raised = False
+        try:
+            await load_context(
+                server_url="http://127.0.0.1:9999/mcp",
+                query="sample chat",
+                mode="prompt",
+                limit=12,
+                path_prefix=None,
+                timeout_seconds=0.3,
+            )
+        except (TimeoutError, asyncio.TimeoutError):
+            raised = True
+        assert raised
+        return loop.time() - start
+
+    elapsed = asyncio.run(run())
+    # Single shared budget ≈ 0.3s; the pre-fix per-call behavior would be ≈ 0.6s.
+    assert elapsed < 0.5
+
+
 def test_format_context_error는_fail_open_안내를_출력한다() -> None:
     block = format_context_error(RuntimeError("boom"))
 

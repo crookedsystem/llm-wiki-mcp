@@ -221,11 +221,14 @@ def merge_hook_settings_json(
         settings["hooks"] = hooks
 
     changed = False
+    # Outer timeout must exceed the helper's whole-operation budget (default 3s,
+    # LLM_WIKI_HOOK_TIMEOUT) plus `uv run` cold-start overhead; otherwise Claude Code
+    # SIGKILLs the hook mid-flight and injects no context. 8s leaves comfortable headroom.
     changed |= ensure_hook_command(
         hooks,
         event="UserPromptSubmit",
         command=context_command,
-        timeout=5,
+        timeout=8,
     )
     if stop_command is not None:
         changed |= ensure_hook_command(

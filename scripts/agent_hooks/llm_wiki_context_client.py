@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections.abc import Mapping
@@ -18,25 +19,43 @@ async def load_context(
     path_prefix: str | None,
     timeout_seconds: float,
 ) -> dict[str, Any]:
+    # `timeout_seconds` is the whole-operation budget, not a per-call one. The
+    # kb_context attempt and its kb_search_notes fallback must SHARE it: against an
+    # unreachable server each call hangs for the full timeout, so a naive fallback
+    # doubles the wall-clock (~2x) and lets the UserPromptSubmit hook overrun Claude
+    # Code's outer timeout, which then SIGKILLs it and injects no context at all.
+    # A shared deadline plus asyncio.wait_for keeps the total bounded so the hook
+    # always fails open with a fallback block inside the budget.
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_seconds
     try:
-        payload = await context_notes(
-            server_url=server_url,
-            query=query,
-            mode=mode,
-            limit=limit,
-            path_prefix=path_prefix,
-            timeout_seconds=timeout_seconds,
+        payload = await asyncio.wait_for(
+            context_notes(
+                server_url=server_url,
+                query=query,
+                mode=mode,
+                limit=limit,
+                path_prefix=path_prefix,
+                timeout_seconds=timeout_seconds,
+            ),
+            timeout=timeout_seconds,
         )
         if is_link_context_payload(payload):
             return payload
     except Exception:
         pass
-    return await search_notes(
-        server_url=server_url,
-        query=query,
-        limit=limit,
-        path_prefix=path_prefix,
-        timeout_seconds=timeout_seconds,
+    remaining = deadline - loop.time()
+    if remaining <= 0:
+        raise TimeoutError("LLM Wiki context budget exhausted before fallback search")
+    return await asyncio.wait_for(
+        search_notes(
+            server_url=server_url,
+            query=query,
+            limit=limit,
+            path_prefix=path_prefix,
+            timeout_seconds=remaining,
+        ),
+        timeout=remaining,
     )
 
 
