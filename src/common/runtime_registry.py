@@ -5,6 +5,7 @@ from threading import Lock
 
 from common.config import Settings
 from common.model import FrozenModel
+from vault.component.note_cache import VaultNoteCache
 from vault.component.write_queue import VaultWriteQueue
 from vault.entity.vault_path import VaultPaths
 from vault.infrastructure.repository.git_repository import GitRepository
@@ -23,6 +24,7 @@ from vault.service.vault_write_service import VaultWriteService
 
 class Runtime(FrozenModel):
     note_repository: VaultNoteRepository
+    note_cache: VaultNoteCache
     write_queue: VaultWriteQueue
     read_service: VaultReadService
     write_service: VaultWriteService
@@ -51,6 +53,7 @@ class RuntimeRegistry:
     def _create(self, vault_root: Path) -> Runtime:
         write_queue = VaultWriteQueue()
         note_repository = VaultNoteRepository(root=vault_root)
+        note_cache = VaultNoteCache(note_repository=note_repository)
         git_repository = GitRepository(root=vault_root)
         paths = VaultPaths(root=vault_root)
         read_service = VaultReadService(paths=paths, queue=write_queue)
@@ -70,10 +73,14 @@ class RuntimeRegistry:
             queue=write_queue,
         )
         search_service = VaultSearchService(note_repository=note_repository)
-        context_service = VaultContextService(note_repository=note_repository)
+        context_service = VaultContextService(
+            note_repository=note_repository,
+            note_cache=note_cache,
+        )
         inspection_service = VaultInspectionService(note_repository=note_repository)
         return Runtime(
             note_repository=note_repository,
+            note_cache=note_cache,
             write_queue=write_queue,
             read_service=read_service,
             write_service=write_service,
