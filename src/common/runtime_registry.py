@@ -13,6 +13,7 @@ from vault.infrastructure.repository.vault_note_repository import (
 )
 from vault.service.vault_context_service import VaultContextService
 from vault.service.vault_delete_service import VaultDeleteService
+from vault.service.vault_folder_organization_service import VaultFolderOrganizationService
 from vault.service.vault_git_push_service import VaultGitPushService
 from vault.service.vault_inspection_service import VaultInspectionService
 from vault.service.vault_read_service import VaultReadService
@@ -27,6 +28,7 @@ class Runtime(FrozenModel):
     write_service: VaultWriteService
     git_push_service: VaultGitPushService
     delete_service: VaultDeleteService
+    folder_organization_service: VaultFolderOrganizationService
     search_service: VaultSearchService
     context_service: VaultContextService
     inspection_service: VaultInspectionService
@@ -63,6 +65,10 @@ class RuntimeRegistry:
             note_repository=note_repository,
             queue=write_queue,
         )
+        folder_organization_service = VaultFolderOrganizationService(
+            note_repository=note_repository,
+            queue=write_queue,
+        )
         search_service = VaultSearchService(note_repository=note_repository)
         context_service = VaultContextService(note_repository=note_repository)
         inspection_service = VaultInspectionService(note_repository=note_repository)
@@ -73,6 +79,7 @@ class RuntimeRegistry:
             write_service=write_service,
             git_push_service=git_push_service,
             delete_service=delete_service,
+            folder_organization_service=folder_organization_service,
             search_service=search_service,
             context_service=context_service,
             inspection_service=inspection_service,

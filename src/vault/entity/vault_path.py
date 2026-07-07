@@ -4,7 +4,9 @@ from pydantic import Field
 
 from common.model import FrozenModel
 
-DEFAULT_DENIED_NAMES = frozenset({".git", ".obsidian", "node_modules", ".trash"})
+DEFAULT_DENIED_NAMES = frozenset(
+    {".git", ".llm-wiki-organize-tmp", ".obsidian", ".trash", "node_modules"}
+)
 
 
 class VaultPathError(ValueError):

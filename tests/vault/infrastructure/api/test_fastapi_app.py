@@ -77,6 +77,7 @@ def test_fastapi_app은_tools_endpoint에서_mcp_tool_schema를_문서화한다(
     read_note = next(tool for tool in tools if tool["name"] == "kb_read_note")
     write_note = next(tool for tool in tools if tool["name"] == "kb_write_note")
     delete_note = next(tool for tool in tools if tool["name"] == "kb_delete_note")
+    organize_folders = next(tool for tool in tools if tool["name"] == "kb_organize_folders")
     search_notes = next(tool for tool in tools if tool["name"] == "kb_search_notes")
     context = next(tool for tool in tools if tool["name"] == "kb_context")
     push_vault = next(tool for tool in tools if tool["name"] == "kb_push_vault")
@@ -84,6 +85,7 @@ def test_fastapi_app은_tools_endpoint에서_mcp_tool_schema를_문서화한다(
     assert "structured fields" in write_note["description"]
     assert "Actual deletion requires dry_run=false" in delete_note["description"]
     assert "appends log.md" in delete_note["description"]
+    assert "folder organization" in organize_folders["description"]
     assert "Search Markdown notes" in search_notes["description"]
     assert "wiki link context map" in context["description"]
     assert "push origin to the current branch" in push_vault["description"]
@@ -130,6 +132,8 @@ def test_fastapi_app은_tools_endpoint에서_mcp_tool_schema를_문서화한다(
     assert delete_note["inputSchema"]["required"] == ["note_path"]
     assert delete_note["inputSchema"]["properties"]["dry_run"]["default"] is True
     assert delete_note["outputSchema"]["type"] == "object"
+    assert organize_folders["inputSchema"]["properties"]["dry_run"]["default"] is True
+    assert organize_folders["outputSchema"]["type"] == "object"
     assert search_notes["inputSchema"]["required"] == ["query"]
     assert search_notes["inputSchema"]["properties"]["query"]["type"] == "string"
     assert context["inputSchema"]["required"] == ["query"]
@@ -142,6 +146,7 @@ def test_fastapi_app은_tools_endpoint에서_mcp_tool_schema를_문서화한다(
         "kb_read_note",
         "kb_write_note",
         "kb_delete_note",
+        "kb_organize_folders",
         "kb_search_notes",
         "kb_context",
         "kb_push_vault",

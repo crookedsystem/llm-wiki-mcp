@@ -19,6 +19,7 @@
 - 通过 `kb_search_notes` MCP tool 搜索 LLM Wiki Markdown
 - 通过 `kb_read_note` + `kb_write_note(if_hash=...)` 执行安全的 full-note update flow
 - 通过 `kb_delete_note` MCP tool 进行显式 confirmation 的 note 删除，并自动维护 log/index
+- 通过 `kb_organize_folders` MCP tool 进行显式 confirmation 的 folder 重组，并自动维护 backlink/schema/index/log
 
 ## How to Start
 
@@ -62,7 +63,7 @@ Obsidian 不需要单独 connector，只需使用 **Open folder as vault** 打�
 uv run llm-wiki
 ```
 
-默认 endpoint 是 `http://127.0.0.1:9999/mcp`。服务器启动后可通过 `GET /health` 查看状态，MCP tool 暴露 `kb_read_note`、`kb_search_notes`、`kb_write_note`、`kb_delete_note`、`kb_context`、`kb_push_vault`。Vault/graph counter 通过 REST `GET /metrics` 查看。
+默认 endpoint 是 `http://127.0.0.1:9999/mcp`。服务器启动后可通过 `GET /health` 查看状态，MCP tool 暴露 `kb_read_note`、`kb_search_notes`、`kb_write_note`、`kb_delete_note`、`kb_organize_folders`、`kb_context`、`kb_push_vault`。Vault/graph counter 通过 REST `GET /metrics` 查看。
 
 ### Hook setup 方法
 
@@ -100,11 +101,12 @@ Context hook 在用户输入时调用 `kb_search_notes`，把相关 wiki snippet
 - 将 `kb_search_notes` 视为 snippet 搜索而非完整文件读取。更新已有 note 时，先用 `kb_read_note` 读取完整 structured body 和 `content_hash`，再把该 hash 作为 `if_hash` 调用 `kb_write_note`
 - 通过 `kb_write_note` 写入完整 Markdown note
 - 删除前先用 `kb_delete_note(dry_run=true)` 预览目标和引用清理候选页面的证据。实际删除必须有用户明确请求，并完全传入返回的 `confirmation_phrase`；`reference_cleanup_paths` 不会删除页面，只会移除指向被删除 note 的 wikilink。实际删除会写入 `log.md`，并自动移除目标在 `index.md` 中的 entry
+- 结构性 folder 重组前先用 `kb_organize_folders(dry_run=true)` 预览移动计划。实际重组必须完全传入返回的 `confirmation_phrase`，只移动 deterministic case，并同时更新 backlink、`SCHEMA.md` subfolder rule、index entry 和 log
 - 使用返回的 `content_hash` 作为下一次 optimistic concurrency 的 `if_hash`
 - 保持 raw source immutable，并在 durable wiki 变更时更新 `index.md` 与 `log.md`
 - 将已安装的 hook command 与 native hook、plugin、wrapper 一起使用：用户输入时加载 compact wiki context，并在 setup 中选中时于 agent 结束时运行 stop-time update pass。Claude Code 和 Codex 共享同一套 `UserPromptSubmit`/`Stop` hook schema（in-loop `decision=block` 再提示），因此被选中时 setup 可以接好。Hermes/Hermess 只提供 finalize 类 session hook，因此 setup 会安装 reusable script，供你接入 plugin/wrapper 或 finalize hook 来运行 out-of-loop update pass。
 
-当前服务器暴露的 MCP tool 是 `kb_read_note`、`kb_write_note`、`kb_delete_note`、`kb_search_notes`、`kb_context` 和 `kb_push_vault`。Vault/graph counter 通过 REST `GET /metrics` endpoint 提供。
+当前服务器暴露的 MCP tool 是 `kb_read_note`、`kb_write_note`、`kb_delete_note`、`kb_organize_folders`、`kb_search_notes`、`kb_context` 和 `kb_push_vault`。Vault/graph counter 通过 REST `GET /metrics` endpoint 提供。
 
 ## Vault Structure
 

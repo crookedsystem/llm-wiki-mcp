@@ -8,3 +8,6 @@ htmlcov/
 .coverage
 coverage.json
 coverage.xml
+
+# review-resolve-loop artifacts
+.review-resolve-loop/
