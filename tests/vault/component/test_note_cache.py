@@ -50,9 +50,7 @@ def test_load_all은_변경없는_노트를_다시_읽지_않는다(
     assert [n.content_hash for n in first] == [n.content_hash for n in second]
 
 
-def test_load_all은_mtime이_바뀌면_재파싱한다(
-    tmp_path: Path, monkeypatch: MonkeyPatch
-) -> None:
+def test_load_all은_mtime이_바뀌면_재파싱한다(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     vault = tmp_path / "vault"
     target = vault / "concepts/a.md"
     _write(target, "# A\n\nalpha\n")

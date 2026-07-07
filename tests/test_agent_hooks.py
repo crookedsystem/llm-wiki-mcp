@@ -391,7 +391,7 @@ def test_load_context는_context와_fallback가_타임아웃_예산을_공유한
                 path_prefix=None,
                 timeout_seconds=0.3,
             )
-        except (TimeoutError, asyncio.TimeoutError):
+        except TimeoutError:
             raised = True
         assert raised
         return loop.time() - start
