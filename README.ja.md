@@ -19,6 +19,7 @@ Git 管理された Obsidian/Markdown LLM Wiki vault 向けの MCP サーバー�
 - `kb_search_notes` MCP tool による LLM Wiki Markdown 検索
 - `kb_read_note` + `kb_write_note(if_hash=...)` による安全な full-note update flow
 - `kb_delete_note` MCP tool による明示 confirmation ベースの note 削除と log/index 自動メンテナンス
+- `kb_organize_folders` MCP tool による明示 confirmation ベースの folder 再編成と backlink/schema/index/log 自動メンテナンス
 
 ## How to Start
 
@@ -62,7 +63,7 @@ Obsidian は別の connector なしで **Open folder as vault** で `KB_VAULT_PA
 uv run llm-wiki
 ```
 
-デフォルト endpoint は `http://127.0.0.1:9999/mcp` です。サーバー起動後は `GET /health` で状態を確認でき、MCP tool は `kb_read_note`、`kb_search_notes`、`kb_write_note`、`kb_delete_note`、`kb_context`、`kb_push_vault` を公開します。Vault/graph counter は REST `GET /metrics` で確認します。
+デフォルト endpoint は `http://127.0.0.1:9999/mcp` です。サーバー起動後は `GET /health` で状態を確認でき、MCP tool は `kb_read_note`、`kb_search_notes`、`kb_write_note`、`kb_delete_note`、`kb_organize_folders`、`kb_context`、`kb_push_vault` を公開します。Vault/graph counter は REST `GET /metrics` で確認します。
 
 ### Hook setup の方法
 
@@ -100,11 +101,12 @@ Context hook はユーザー入力時に `kb_search_notes` を呼び出し、関
 - `kb_search_notes` は完全なファイル読み取りではなく snippet 検索として扱う。既存 note の更新は `kb_read_note` で完全な structured body と `content_hash` を読み、その hash を `if_hash` として `kb_write_note` に渡す
 - `kb_write_note` を通じて完全な Markdown note を書き込む
 - 削除は先に `kb_delete_note(dry_run=true)` で対象と参照 cleanup 候補の根拠を確認する。実際の削除にはユーザーの明示的な依頼と、返された `confirmation_phrase` の完全一致が必要で、`reference_cleanup_paths` は page を削除せず、削除対象 note への wikilink だけを取り除く。実際の削除では `log.md` に記録し、対象の `index.md` entry を自動で削除する
+- 構造的な folder 再編成は先に `kb_organize_folders(dry_run=true)` で移動計画を確認する。実際の再編成には返された `confirmation_phrase` の完全一致が必要で、deterministic case だけを移動し、backlink、`SCHEMA.md` subfolder rule、index entry、log を同時に更新する
 - optimistic concurrency のため、返された `content_hash` を次の `if_hash` として使う
 - raw source は immutable に保ち、durable wiki 変更時に `index.md` と `log.md` を更新する
 - インストールされた hook command を native hook、plugin、wrapper と一緒に使う。ユーザー入力時に compact wiki context を読み込み、setup で選択した場合は agent 終了時に stop-time update pass を実行する。Claude Code と Codex は同じ `UserPromptSubmit`/`Stop` hook schema（in-loop `decision=block` 再プロンプト）を共有するため、選択された場合は setup が接続できる。Hermes/Hermess は finalize 系の session hook しか提供しないため、plugin/wrapper や finalize hook に接続して out-of-loop の update pass を実行できるよう reusable script をインストールする。
 
-現在サーバーが公開している MCP tool は `kb_read_note`、`kb_write_note`、`kb_delete_note`、`kb_search_notes`、`kb_context`、`kb_push_vault` です。Vault/graph counter は REST `GET /metrics` endpoint で提供します。
+現在サーバーが公開している MCP tool は `kb_read_note`、`kb_write_note`、`kb_delete_note`、`kb_organize_folders`、`kb_search_notes`、`kb_context`、`kb_push_vault` です。Vault/graph counter は REST `GET /metrics` endpoint で提供します。
 
 ## Vault Structure
 

@@ -3,12 +3,17 @@ from mcp.server.fastmcp import FastMCP
 from vault.dto.request.context_request import ContextRequest
 from vault.dto.request.delete_note_request import DeleteNoteRequest
 from vault.dto.request.note_time import NoteTime
+from vault.dto.request.organize_folders_request import OrganizeFoldersRequest
 from vault.dto.request.read_note_request import ReadNoteRequest
 from vault.dto.request.search_notes_request import SearchNotesRequest
 from vault.dto.request.write_note_request import WriteNoteRequest
 from vault.dto.response.context_response import ContextResponse, ContextResponseMapper
 from vault.dto.response.delete_note_response import DeleteNoteResponse, delete_note_response
 from vault.dto.response.git_push_response import GitPushResponse, git_push_response
+from vault.dto.response.organize_folders_response import (
+    OrganizeFoldersResponse,
+    organize_folders_response,
+)
 from vault.dto.response.read_note_response import ReadNoteResponse, read_note_response
 from vault.dto.response.search_notes_response import (
     SearchNotesResponse,
@@ -19,9 +24,11 @@ from vault.dto.response.write_note_response import (
     write_note_response,
 )
 from vault.service.command.context_command import ContextMode
+from vault.service.command.organize_folders_command import FolderOrganizationRoot
 from vault.service.command.write_note_command import ConfidenceLevel, WikiNoteType
 from vault.service.vault_context_service import VaultContextService
 from vault.service.vault_delete_service import VaultDeleteService
+from vault.service.vault_folder_organization_service import VaultFolderOrganizationService
 from vault.service.vault_git_push_service import VaultGitPushService
 from vault.service.vault_read_service import VaultReadService
 from vault.service.vault_search_service import VaultSearchService
@@ -36,6 +43,7 @@ def register_vault_tools(
     context_service: VaultContextService,
     git_push_service: VaultGitPushService,
     delete_service: VaultDeleteService,
+    folder_organization_service: VaultFolderOrganizationService,
 ) -> None:
     @server.tool(
         description=(
@@ -119,6 +127,30 @@ def register_vault_tools(
         )
         result = await delete_service.delete_note(request.to_command())
         return delete_note_response(result)
+
+    @server.tool(
+        description=(
+            "Preview or apply deterministic folder organization for existing wiki notes. "
+            "The tool corrects clear top-folder/type mismatches and creates subfolders only "
+            "when a folder has enough direct notes and at least two closed-key child groups "
+            "meet the minimum group size. Default dry_run returns every move and an exact "
+            "confirmation_phrase. Actual organization requires dry_run=false and confirm equal "
+            "to that phrase; it moves files, rewrites backlinks, and updates SCHEMA.md, "
+            "index.md, and log.md."
+        )
+    )
+    async def kb_organize_folders(
+        root_folder: FolderOrganizationRoot | None = None,
+        dry_run: bool = True,
+        confirm: str | None = None,
+    ) -> OrganizeFoldersResponse:
+        request = OrganizeFoldersRequest(
+            root_folder=root_folder,
+            dry_run=dry_run,
+            confirm=confirm,
+        )
+        result = await folder_organization_service.organize_folders(request.to_command())
+        return organize_folders_response(result)
 
     @server.tool(
         description=(

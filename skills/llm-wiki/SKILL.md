@@ -22,6 +22,7 @@ The main wiki workflow uses these tool names:
 - `kb_write_note(note_path, title, type, tags, sources, body, updated, created?, summary?, confidence?, contested?, if_hash?)` — write a note inside the configured vault from structured fields. `updated` must be a UTC ISO datetime with seconds and a trailing `Z` (`YYYY-MM-DDTHH:MM:SSZ`); new notes also require `created` in that format. Existing notes require optimistic concurrency with `if_hash` and must omit `created` so the original creation timestamp is preserved. The write also appends a `log.md` changelog entry and upserts the page's `index.md` entry automatically, so you never hand-maintain those two files for note writes. Pass `summary` as the one-line description used for the index entry and log bullet; it falls back to `title` when omitted.
 - `kb_read_note(note_path)` — read a complete existing note as structured fields for safe full-replacement updates. It returns the rendered note's frontmatter fields, body without YAML/title/provenance, and the current `content_hash` to pass as `if_hash` to `kb_write_note`.
 - `kb_delete_note(note_path, reference_cleanup_paths?, dry_run?, confirm?)` — preview or delete a note and optionally clean backlinks from explicitly listed referencing notes. Default `dry_run=true` returns reference-cleanup candidates, evidence, and an exact `confirmation_phrase`. Actual deletion requires `dry_run=false` and `confirm` exactly equal to that phrase. Referencing notes are not deleted; when approved paths are passed in `reference_cleanup_paths`, only wikilinks pointing at `note_path` are removed from those notes. Actual deletion appends `log.md` and removes the target's `index.md` entry automatically when present.
+- `kb_organize_folders(root_folder?, dry_run?, confirm?)` — preview or apply deterministic folder organization for existing notes. Default `dry_run=true` returns proposed moves, created subfolders, and a `confirmation_phrase`. Actual organization requires `dry_run=false` with that exact confirmation; it corrects clear top-folder/type mismatches, creates subfolders only when the folder-split thresholds are met, moves matching notes, rewrites backlinks, and updates `SCHEMA.md`, `index.md`, and `log.md`.
 - `kb_context(query, mode?, limit?, path_prefix?)` — build a wiki context map for prompt, prewrite, or stop-hook use. In prompt mode it prioritizes scoped prompt cues from `## Prompt hints`, link targets, and suggested links; in prewrite/stop mode it also returns orientation pages and broken wiki links. It returns usage guidance, entity guidance, and `followup_search` queries, but intentionally omits score, snippets, and textual evidence.
 - `kb_search_notes(query, limit?, path_prefix?)` — low-level evidence search. It searches the Markdown LLM Wiki vault and returns ranked paths, titles, page types, tags, content hashes, and line snippets. Use it when `kb_context.followup_search` or your own question needs textual evidence.
 
@@ -149,6 +150,11 @@ remaining distinction is an attribute value (version/date/status) rather than a 
 instead. Subfolders never change a page's `type` (`entities/products/postgresql.md` is still
 `type: entity`). Full details, worked examples, and the research basis are in
 `references/folder-structure.md`.
+
+Use `kb_organize_folders(dry_run=true)` for a deliberate batch reorg when you need the server to
+identify eligible subfolders and existing notes that should move. Inspect every proposed move before
+passing the returned `confirmation_phrase`; the tool deliberately refuses to create thin one-page
+folders and leaves ambiguous multi-scope notes in place.
 
 ### Relocating misplaced pages
 
@@ -451,6 +457,26 @@ Deletion is destructive and must be opt-in for every affected page.
 - Do not use delete tools from stop hooks, prompt hooks, automatic maintenance, or "durable memory" updates. Hooks may report deletion candidates, but deletion must wait for a direct user request.
 - Actual deletion appends `log.md` and removes the target's `index.md` entry automatically when present. Do not hand-edit those files for delete cleanup. Dry-run returns preview evidence only and does not update vault files.
 
+## Folder organization tool policy
+
+`kb_organize_folders` is the safe batch path for turning the folder-placement policy into vault
+changes. Use it when a top folder has grown enough to earn subfolders, or when existing pages have
+clear top-folder/type mismatches. Always call it in dry-run mode first and show or inspect the full
+move list. Actual execution requires the exact `confirmation_phrase` from that dry-run.
+
+The tool only applies deterministic cases:
+
+- type/top-folder mismatches such as a `type: entity` note under `concepts/`;
+- subfolder splits where the current folder has enough direct notes and at least two child groups
+  satisfy the minimum group size;
+- closed keys based on entity kind, source type, entity/project scope tags, or bounded technical
+  domain tags.
+
+It rewrites `[[old-path]]` backlinks to the new paths, adds missing `SCHEMA.md` subfolder membership
+rules, moves index entries, and logs each move. It intentionally skips ambiguous notes, including
+notes whose tags match multiple possible scope folders. Do not run it from prompt/stop hooks or
+automatic memory writes; folder reorganization is deliberate maintenance.
+
 ## LLM Wiki page flow
 
 1. Capture or identify the source material.
@@ -461,6 +487,10 @@ Deletion is destructive and must be opt-in for every affected page.
 6. Create or update only the pages that meet the entity/page thresholds above or the vault `SCHEMA.md` thresholds.
 7. Do not touch `index.md` or `log.md` by hand — the write in step 6 already upserted the index entry and prepended the log entry. Just pass a `summary` on that write so both entries read well.
 8. If `kb_write_note` reports a stale hash, stop, re-read the note, and re-apply the intended patch only after verifying the concurrent change. Report the exact note paths written and returned hashes.
+
+For batch folder cleanup, use `kb_organize_folders` instead of manually repeating many
+write-new/delete-old relocations. Keep ordinary single-note writes explicit: choose the best path
+before `kb_write_note`; do not expect `kb_write_note` itself to silently move a note.
 
 ## Exploration flow
 
@@ -730,6 +760,7 @@ When you must guarantee the update runs unattended, a stop/finalize hook can spa
 Hermes prefixes native MCP tools as `mcp_<server>_<tool>`. With the default `llm_wiki` server name, look for:
 
 - `mcp_llm_wiki_kb_write_note`
+- `mcp_llm_wiki_kb_organize_folders`
 - `mcp_llm_wiki_kb_delete_note`
 - `mcp_llm_wiki_kb_read_note`
 - `mcp_llm_wiki_kb_context`

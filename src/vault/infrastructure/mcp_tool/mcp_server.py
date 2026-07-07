@@ -6,6 +6,7 @@ from common.config import Settings
 from vault.infrastructure.mcp_tool.tool_registry import register_vault_tools
 from vault.service.vault_context_service import VaultContextService
 from vault.service.vault_delete_service import VaultDeleteService
+from vault.service.vault_folder_organization_service import VaultFolderOrganizationService
 from vault.service.vault_git_push_service import VaultGitPushService
 from vault.service.vault_read_service import VaultReadService
 from vault.service.vault_search_service import VaultSearchService
@@ -26,6 +27,7 @@ def create_mcp_server(
     context_service: VaultContextService,
     git_push_service: VaultGitPushService,
     delete_service: VaultDeleteService,
+    folder_organization_service: VaultFolderOrganizationService,
 ) -> FastMCP[object]:
     server: FastMCP[object] = FastMCP(
         "llm-wiki",
@@ -42,5 +44,6 @@ def create_mcp_server(
         context_service,
         git_push_service,
         delete_service,
+        folder_organization_service,
     )
     return server
