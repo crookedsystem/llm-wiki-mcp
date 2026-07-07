@@ -2,11 +2,10 @@ from pathlib import Path
 
 from pydantic import Field
 
-from common.helper.note_metadata_helper import extract_note_metadata
-from common.helper.wiki_link_helper import extract_wiki_links, normalize_wiki_target
+from common.helper.wiki_link_helper import normalize_wiki_target
 from common.model import FrozenModel
+from vault.component.note_cache import NoteContext, VaultNoteCache
 from vault.constant.search import QUERY_TOKEN_PATTERN
-from vault.entity.vault_note import compute_sha256
 from vault.infrastructure.repository.vault_note_repository import VaultNoteRepository
 from vault.service.command.context_command import ContextCommand
 from vault.service.result.context_result import (
@@ -41,23 +40,16 @@ class ContextGraph(FrozenModel):
     prompt_cues: list[PromptCue] = Field(default_factory=list)
 
 
-class _NoteContext(FrozenModel):
-    path: str
-    title: str | None
-    page_type: str | None
-    tags: list[str]
-    headings: list[str]
-    content: str
-    content_hash: str
-    links: list[str]
-
-
 class VaultContextGraphBuilder(FrozenModel):
     note_repository: VaultNoteRepository
+    note_cache: VaultNoteCache
 
     def build_graph(self, command: ContextCommand) -> ContextGraph:
-        all_notes = self._notes(path_prefix=None)
-        scoped_notes = self._notes(path_prefix=command.path_prefix)
+        # Load (and cache) the whole vault once, then derive the scoped view in memory.
+        # The previous code scanned the vault twice from disk (once for all_notes, once
+        # for scoped_notes); for the hook's default path_prefix=None those were identical.
+        all_notes = self.note_cache.load_all()
+        scoped_notes = self._scoped_notes(all_notes, command.path_prefix)
         notes_by_path = {note.path: note for note in all_notes}
         note_ids = self._note_ids(all_notes)
 
@@ -92,8 +84,8 @@ class VaultContextGraphBuilder(FrozenModel):
     def _build_prompt_graph(
         self,
         command: ContextCommand,
-        scoped_notes: list[_NoteContext],
-        notes_by_path: dict[str, _NoteContext],
+        scoped_notes: list[NoteContext],
+        notes_by_path: dict[str, NoteContext],
         note_ids: dict[str, str],
     ) -> ContextGraph:
         remaining = command.limit
@@ -123,30 +115,27 @@ class VaultContextGraphBuilder(FrozenModel):
             prompt_cues=prompt_cues,
         )
 
-    def _notes(self, path_prefix: str | None) -> list[_NoteContext]:
+    def _scoped_notes(
+        self,
+        all_notes: list[NoteContext],
+        path_prefix: str | None,
+    ) -> list[NoteContext]:
+        # resolve_search_root validates path_prefix (relative, no escape, no denied dir)
+        # and resolves to a directory or a single file; we then filter the already-loaded
+        # notes in memory instead of walking/reading the disk a second time.
         search_root = self.note_repository.resolve_search_root(path_prefix)
-        notes: list[_NoteContext] = []
-        for note_path in self.note_repository.markdown_notes(search_root):
-            relative_path = self.note_repository.relative_path(note_path)
-            content = self.note_repository.read_note(note_path)
-            metadata = extract_note_metadata(content)
-            notes.append(
-                _NoteContext(
-                    path=relative_path,
-                    title=metadata.title,
-                    page_type=metadata.page_type,
-                    tags=metadata.tags,
-                    headings=metadata.headings,
-                    content=content,
-                    content_hash=compute_sha256(content),
-                    links=extract_wiki_links(content),
-                )
-            )
-        return notes
+        vault_root = self.note_repository.vault_root
+        if search_root == vault_root:
+            return all_notes
+        if search_root.is_file():
+            relative_file = search_root.relative_to(vault_root).as_posix()
+            return [note for note in all_notes if note.path == relative_file]
+        relative_prefix = search_root.relative_to(vault_root).as_posix() + "/"
+        return [note for note in all_notes if note.path.startswith(relative_prefix)]
 
     def _orientation(
         self,
-        notes_by_path: dict[str, _NoteContext],
+        notes_by_path: dict[str, NoteContext],
         query: str,
         *,
         limit: int,
@@ -163,7 +152,7 @@ class VaultContextGraphBuilder(FrozenModel):
 
     def _broken_links(
         self,
-        notes: list[_NoteContext],
+        notes: list[NoteContext],
         note_ids: dict[str, str],
         *,
         limit: int,
@@ -202,7 +191,7 @@ class VaultContextGraphBuilder(FrozenModel):
 
     def _link_targets(
         self,
-        notes: list[_NoteContext],
+        notes: list[NoteContext],
         query: str,
         *,
         limit: int,
@@ -224,9 +213,9 @@ class VaultContextGraphBuilder(FrozenModel):
 
     def _suggested_links(
         self,
-        notes: list[_NoteContext],
+        notes: list[NoteContext],
         link_targets: list[ContextReference],
-        notes_by_path: dict[str, _NoteContext],
+        notes_by_path: dict[str, NoteContext],
         query: str,
         *,
         limit: int,
@@ -269,7 +258,7 @@ class VaultContextGraphBuilder(FrozenModel):
                 )
         return suggestions
 
-    def _reference(self, note: _NoteContext, *, relation: str, query: str) -> ContextReference:
+    def _reference(self, note: NoteContext, *, relation: str, query: str) -> ContextReference:
         return ContextReference(
             path=note.path,
             title=note.title,
@@ -282,7 +271,7 @@ class VaultContextGraphBuilder(FrozenModel):
 
     def _prompt_cues(
         self,
-        notes: list[_NoteContext],
+        notes: list[NoteContext],
         query: str,
         *,
         limit: int,
@@ -302,7 +291,7 @@ class VaultContextGraphBuilder(FrozenModel):
                 cues_by_kind[cue.memory_kind] = cues_by_kind.get(cue.memory_kind, 0) + 1
         return cues
 
-    def _note_prompt_cues(self, note: _NoteContext) -> list[PromptCue]:
+    def _note_prompt_cues(self, note: NoteContext) -> list[PromptCue]:
         cues: list[PromptCue] = []
         in_prompt_hints = False
         for line in note.content.splitlines():
@@ -343,7 +332,7 @@ class VaultContextGraphBuilder(FrozenModel):
 
     def _prompt_cue(
         self,
-        note: _NoteContext,
+        note: NoteContext,
         fields: dict[str, str],
         *,
         memory_kind: str,
@@ -386,7 +375,7 @@ class VaultContextGraphBuilder(FrozenModel):
         ).lower()
         return any(term in haystack for term in terms)
 
-    def _target_relation(self, note: _NoteContext) -> str | None:
+    def _target_relation(self, note: NoteContext) -> str | None:
         tags = {tag.lower() for tag in note.tags}
         page_type = (note.page_type or "").lower()
         if note.path.startswith("entities/") or page_type == "entity":
@@ -399,7 +388,7 @@ class VaultContextGraphBuilder(FrozenModel):
             return "reference_note"
         return None
 
-    def _matches_terms(self, note: _NoteContext, terms: list[str]) -> bool:
+    def _matches_terms(self, note: NoteContext, terms: list[str]) -> bool:
         haystack = " ".join(
             [
                 note.path,
@@ -414,8 +403,8 @@ class VaultContextGraphBuilder(FrozenModel):
 
     def _suggestion_reason(
         self,
-        source: _NoteContext,
-        target: _NoteContext,
+        source: NoteContext,
+        target: NoteContext,
         terms: list[str],
     ) -> str | None:
         source_tags = {tag.lower() for tag in source.tags}
@@ -427,14 +416,14 @@ class VaultContextGraphBuilder(FrozenModel):
             return "source and target both match the context query"
         return None
 
-    def _note_ids(self, notes: list[_NoteContext]) -> dict[str, str]:
+    def _note_ids(self, notes: list[NoteContext]) -> dict[str, str]:
         note_ids: dict[str, str] = {}
         for note in notes:
             for key in self._note_keys(note):
                 note_ids[key] = note.path
         return note_ids
 
-    def _note_keys(self, note: _NoteContext) -> set[str]:
+    def _note_keys(self, note: NoteContext) -> set[str]:
         relative_path = Path(note.path)
         keys = {
             relative_path.with_suffix("").as_posix(),
