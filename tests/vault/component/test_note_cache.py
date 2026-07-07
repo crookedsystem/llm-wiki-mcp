@@ -72,6 +72,37 @@ def test_load_all은_mtime이_바뀌면_재파싱한다(tmp_path: Path, monkeypa
     assert "updated" in after.content
 
 
+def test_load_all은_같은크기_mtime보존_재작성을_ctime으로_감지한다(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    # Reviewer P2: a rewrite with identical byte length + preserved mtime collides on
+    # (mtime_ns, size). ctime (which userspace cannot forge) still changes on write, so
+    # the cache must re-read instead of serving the stale parse.
+    vault = tmp_path / "vault"
+    target = vault / "concepts/a.md"
+    _write(target, "# A\n\nalpha\n")
+    original = target.stat()
+    cache = _cache(vault)
+    reads = _count_reads(monkeypatch)
+
+    before = cache.load_all()[0]
+    assert reads["reads"] == 1
+
+    replacement = "# A\n\nALPHA\n"  # same byte length, different content
+    assert len(replacement.encode()) == original.st_size
+    target.write_text(replacement, encoding="utf-8")
+    # Restore the original mtime so (mtime_ns, size) matches the cached entry; the write
+    # (and this utime call) still advance ctime.
+    os.utime(target, ns=(original.st_atime_ns, original.st_mtime_ns))
+    restated = target.stat()
+    assert (restated.st_mtime_ns, restated.st_size) == (original.st_mtime_ns, original.st_size)
+
+    after = cache.load_all()[0]
+    assert reads["reads"] == 2  # detected via ctime despite matching (mtime, size)
+    assert after.content_hash != before.content_hash
+    assert "ALPHA" in after.content
+
+
 def test_load_all은_삭제된_노트를_제거하고_추가된_노트를_포함한다(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     _write(vault / "concepts/a.md", "# A\n")
