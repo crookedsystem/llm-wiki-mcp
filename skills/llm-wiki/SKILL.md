@@ -280,6 +280,19 @@ One short paragraph explaining why this page matters.
 
 Every new synthesized page should have at least two useful outbound `[[wikilinks]]` when possible. If two links are impossible because the vault is new, create the most important link now and note in the page body's open questions that back-links should be filled after more pages exist.
 
+### Bundled writing references
+
+Synthesized pages should read as conclusion-first, scannable documents. The distilled writing rules live in `references/writing-*.md`; load them selectively when composing or substantially rewriting a note body — not for link hygiene, frontmatter fixes, or one-line patches:
+
+- `references/writing-document-structure.md` — section order, the summary → visualization → detail skeleton, document-type branching, `## Summary` extraction rules. Read it when creating a page or restructuring one.
+- `references/writing-diction.md` — word choice, jargon definitions, one-concept-one-term, two-pass weed cutting. Read it when drafting or editing prose wording.
+- `references/writing-sentence-structure.md` — sentence splitting, the length ceiling, voice, parallel lists. Read it when prose runs long or tangled.
+- `references/writing-flow.md` — given→new chains, topic sentences, connective policy, paragraph completeness. Read it when a body feels choppy or disconnected.
+- `references/writing-visualization.md` — the three gates for diagrams/tables, Mermaid design rules, code-snippet explanation. Read it before adding any diagram, table, or code block to a note.
+- `references/writing-research-map.md` — the research basis behind the writing rules. Read it only when justifying or changing the rules themselves; do not inject it into routine prompts.
+
+Even without loading the references, apply these always-on defaults: put the conclusion in the first `## Summary` sentence, keep one idea per sentence and per paragraph, define jargon at first use or wikilink its page, and add a diagram only when it shows a real contrast and can be maintained as text (Mermaid).
+
 ### Prompt hints section
 
 When a page contains context that should be retrieved automatically by prompt hooks, add a compact optional `## Prompt hints` section. Keep it extractable and scoped; do not force hooks to summarize long prose.
@@ -484,7 +497,7 @@ automatic memory writes; folder reorganization is deliberate maintenance.
 3. Resolve entity anchors before writing concepts or queries. If the note is project/service/module-specific, identify the matching `entities/` page first.
 4. Call `kb_context(mode="prewrite")` before writing. Repair relevant broken links, reuse existing link targets, and inspect suggested links before creating pages.
 5. Use `kb_search_notes` with `followup_search` when you need evidence for a proposed link, duplicate-page check, alias check, or entity creation decision.
-6. Create or update only the pages that meet the entity/page thresholds above or the vault `SCHEMA.md` thresholds.
+6. Create or update only the pages that meet the entity/page thresholds above or the vault `SCHEMA.md` thresholds. When the write includes a substantial new or rewritten body, consult the matching bundled writing references (see "Bundled writing references") before composing it.
 7. Do not touch `index.md` or `log.md` by hand — the write in step 6 already upserted the index entry and prepended the log entry. Just pass a `summary` on that write so both entries read well.
 8. If `kb_write_note` reports a stale hash, stop, re-read the note, and re-apply the intended patch only after verifying the concurrent change. Report the exact note paths written and returned hashes.
 
