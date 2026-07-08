@@ -282,16 +282,11 @@ Every new synthesized page should have at least two useful outbound `[[wikilinks
 
 ### Bundled writing references
 
-Synthesized pages should read as conclusion-first, scannable documents. The distilled writing rules live in `references/writing-*.md`; load them selectively when composing or substantially rewriting a note body — not for link hygiene, frontmatter fixes, or one-line patches:
+Synthesized pages should read as conclusion-first, scannable documents. The canonical writing rules have a single source outside this skill: the shared writing references installed to every agent's skills root by the prompt repository's `init_ai_configs.py` (for Claude Code: `~/.claude/skills/_shared/writing/`). Do not copy their content into this skill.
 
-- `references/writing-document-structure.md` — section order, the summary → visualization → detail skeleton, document-type branching, `## Summary` extraction rules. Read it when creating a page or restructuring one.
-- `references/writing-diction.md` — word choice, jargon definitions, one-concept-one-term, two-pass weed cutting. Read it when drafting or editing prose wording.
-- `references/writing-sentence-structure.md` — sentence splitting, the length ceiling, voice, parallel lists. Read it when prose runs long or tangled.
-- `references/writing-flow.md` — given→new chains, topic sentences, connective policy, paragraph completeness. Read it when a body feels choppy or disconnected.
-- `references/writing-visualization.md` — the three gates for diagrams/tables, Mermaid design rules, code-snippet explanation. Read it before adding any diagram, table, or code block to a note.
-- `references/writing-research-map.md` — the research basis behind the writing rules. Read it only when justifying or changing the rules themselves; do not inject it into routine prompts.
+When composing or substantially rewriting a note body — not for link hygiene, frontmatter fixes, or one-line patches — read `references/writing-wiki-adaptation.md`. It maps the shared rules onto the vault's note shape (`## Summary` extraction, `## Key facts` visualization gates, ~200-line splits, `summary` argument) and lists which shared file to load per task: `document-structure.md` when creating or restructuring a page, `diction.md`/`sentence-structure.md`/`flow.md` when editing prose, `visualization.md` before adding any diagram, table, or code block, and `research-map.md` only when changing the rules themselves.
 
-Even without loading the references, apply these always-on defaults: put the conclusion in the first `## Summary` sentence, keep one idea per sentence and per paragraph, define jargon at first use or wikilink its page, and add a diagram only when it shows a real contrast and can be maintained as text (Mermaid).
+If the shared directory is not installed on this machine, do not block the write — apply these always-on defaults: put the conclusion in the first `## Summary` sentence (written after the body is final), keep one idea per sentence and per paragraph, define jargon at first use or wikilink its page, and add a diagram only when it shows a real contrast and can be maintained as text (Mermaid).
 
 ### Prompt hints section
 
