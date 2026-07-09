@@ -78,3 +78,4 @@ CONTEXT_FOOTER: Final = (
     "[[path|label]] links before writing; tags/sources/titles/index entries do not "
     "create graph edges."
 )
+
