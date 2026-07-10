@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from prompts.installer import HOOK_SCRIPT_TEMPLATE, HOOKS_README_TEMPLATE
+from prompts.installer import HOOK_SCRIPT_TEMPLATE, HOOKS_README_TEMPLATE, SKILL_HINT_CAT_BLOCK
 
 from setup_support.config import ResolvedConfig, stable_repo_root
 
@@ -117,6 +117,7 @@ def render_hook_script(
     if rendered_extra:
         rendered_extra = f" {rendered_extra}"
 
+    skill_hint = SKILL_HINT_CAT_BLOCK if mode == "context" else ""
     return HOOK_SCRIPT_TEMPLATE.format(
         server_name=shlex.quote(config.server_name),
         server_url=shlex.quote(config.server_url),
@@ -124,6 +125,7 @@ def render_hook_script(
         helper=shlex.quote(str(helper)),
         mode=shlex.quote(mode),
         extra=rendered_extra,
+        skill_hint=skill_hint,
     )
 
 

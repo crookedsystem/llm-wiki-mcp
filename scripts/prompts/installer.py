@@ -9,6 +9,23 @@ from __future__ import annotations
 
 from typing import Final
 
+# Built from adjacent string literals so the emitted heredoc line stays a single
+# physical line (no injected newline) while each source line satisfies E501.
+_SKILL_HINT_LINE: Final = (
+    "Skill activation: if the wiki context above is relevant to the current task, "
+    'call Skill("llm-wiki") BEFORE responding to load the full wiki management '
+    "workflow (search, write, update notes). Relevant signals — 기술 결정, CTO 논의, "
+    "API 설계, 아키텍처, 팀 논의, Slack 대화, 번역, 폴링, fanplus-api, 스크럼, PM, 기획, "
+    "결정사항, 회의록, 코드 컨벤션, 프로젝트 비즈니스 룰, wiki, KB, vault, Obsidian, "
+    "저장해줘, 기억해줘, 찾아줘, 검색해줘, 정리해줘."
+)
+
+SKILL_HINT_CAT_BLOCK: Final = f"""\
+cat << 'SKILL_HINT'
+{_SKILL_HINT_LINE}
+SKILL_HINT
+"""
+
 HOOK_SCRIPT_TEMPLATE: Final = """#!/usr/bin/env bash
 set -euo pipefail
 
@@ -32,10 +49,10 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 0
 fi
 
-exec uv --project {repo_root} run python "$LLM_WIKI_HOOK_HELPER" {mode} \\
+uv --project {repo_root} run python "$LLM_WIKI_HOOK_HELPER" {mode} \\
   --server-name "$LLM_WIKI_MCP_SERVER_NAME" \\
-  --server-url "$LLM_WIKI_MCP_URL"{extra} "$@"
-"""
+  --server-url "$LLM_WIKI_MCP_URL"{extra} "$@" || true
+{skill_hint}"""
 
 HOOKS_README_TEMPLATE: Final = """# LLM Wiki agent hooks
 
