@@ -35,9 +35,14 @@ from vault.service.folder_organization_schema import (
 )
 from vault.service.result.organize_folders_result import FolderMove, OrganizeFoldersResult
 from vault.service.vault_index_service import IndexEntry, VaultIndexService
+from vault.service.vault_log_archiver import VaultLogArchiver
 from vault.service.vault_log_service import LogEntry, VaultLogService
 from vault.service.vault_operational_note import OperationalNote
-from vault.service.vault_operational_paths import INDEX_NOTE_PATH, LOG_NOTE_PATH
+from vault.service.vault_operational_paths import (
+    INDEX_NOTE_PATH,
+    LOG_NOTE_PATH,
+    is_operational_note,
+)
 
 SCHEMA_NOTE_PATH = "SCHEMA.md"
 TEMPORARY_MOVE_DIRECTORY = ".llm-wiki-organize-tmp"
@@ -119,7 +124,7 @@ class VaultFolderOrganizationService(FrozenModel):
         notes: list[FolderOrganizationNote] = []
         for note_path in self.note_repository.markdown_notes():
             relative_path = self.note_repository.relative_path(note_path)
-            if relative_path in _OPERATIONAL_NOTE_PATHS:
+            if is_operational_note(relative_path):
                 continue
             content = self.note_repository.read_note(note_path)
             metadata = extract_note_metadata(content)
@@ -261,6 +266,8 @@ class VaultFolderOrganizationService(FrozenModel):
             paths.add(self.note_repository.vault_root / move.new_path)
         for operational_path in _OPERATIONAL_NOTE_PATHS:
             paths.add(self.note_repository.vault_root / operational_path)
+        # log rotation이 새로 만들 수 있는 log-YYYY.md까지 포함해야 롤백이 완결된다.
+        paths.update(self._log_archiver.rotation_paths([self._organize_timestamp()[:4]]))
         return [self._snapshot_path(path) for path in sorted(paths)]
 
     def _snapshot_path(self, path: Path) -> _FileSnapshot:
@@ -421,27 +428,32 @@ class VaultFolderOrganizationService(FrozenModel):
         moves: list[FolderMove],
         note_by_path: dict[str, FolderOrganizationNote],
     ) -> list[str]:
-        log_path = self.note_repository.vault_root / LOG_NOTE_PATH
-        existing = log_path.read_text(encoding="utf-8") if log_path.exists() else None
         updated = self._organize_timestamp()
-        current = existing
-        for move in moves:
-            note = note_by_path[move.old_path]
-            current = self.log_service.append_entry(
-                current,
-                LogEntry(
-                    date=updated[:10],
-                    action="update",
-                    slug=_slug(move.new_path),
-                    path=move.new_path,
-                    description=f"Moved from {move.old_path}: {note.title or move.new_path}",
-                    updated=updated,
+        entries = [
+            LogEntry(
+                date=updated[:10],
+                action="update",
+                slug=_slug(move.new_path),
+                path=move.new_path,
+                description=(
+                    f"Moved from {move.old_path}: "
+                    f"{note_by_path[move.old_path].title or move.new_path}"
                 ),
+                updated=updated,
             )
-        if current is None:
-            return []
-        self._persist_operational(log_path, current)
-        return [LOG_NOTE_PATH]
+            for move in moves
+        ]
+        log_files = self._log_archiver.append_entries(entries)
+        for log_file in log_files:
+            self._persist_operational(log_file.path, log_file.content)
+        return [self.note_repository.relative_path(log_file.path) for log_file in log_files]
+
+    @property
+    def _log_archiver(self) -> VaultLogArchiver:
+        return VaultLogArchiver(
+            vault_root=self.note_repository.vault_root,
+            log_service=self.log_service,
+        )
 
     def _persist_operational(self, path: Path, source_content: str) -> None:
         source_hash = compute_sha256(source_content)
