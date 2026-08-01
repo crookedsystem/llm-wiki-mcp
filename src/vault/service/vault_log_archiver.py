@@ -18,7 +18,8 @@ class VaultLogArchiver(FrozenModel):
     """log.md에 changelog 항목을 쌓고, 지난 연도 항목은 log-YYYY.md로 분리합니다.
 
     provenance trailer는 호출 서비스마다 operation 이름이 달라 여기서 붙이지 않고,
-    쓸 내용만 돌려줍니다. 호출자는 반환된 파일을 모두 persist해야 rotation이 완결됩니다.
+    쓸 내용만 돌려줍니다. 호출자는 반환된 파일을 반환된 순서대로 persist해야 rotation이
+    완결됩니다.
     """
 
     vault_root: Path
@@ -36,12 +37,15 @@ class VaultLogArchiver(FrozenModel):
             existing_archives=self._existing_archives(),
             timestamp=entries[-1].updated,
         )
+        # archive를 log.md보다 먼저 쓰게 순서를 잡는다. 반대로 쓰면 log.md에서 지워진
+        # 지난 연도 항목이 아직 어디에도 없는 순간이 생겨, 그 사이에 프로세스가 죽으면
+        # 히스토리가 사라진다. 이 순서에서는 최악의 경우가 유실이 아니라 중복이다.
         return [
-            LogFileContent(path=self._log_path, content=rotation.log),
             *(
                 LogFileContent(path=self.vault_root / archive.path, content=archive.content)
                 for archive in rotation.archives
             ),
+            LogFileContent(path=self._log_path, content=rotation.log),
         ]
 
     def rotation_paths(self, entry_years: list[str]) -> list[Path]:

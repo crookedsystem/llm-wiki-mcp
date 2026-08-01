@@ -42,6 +42,7 @@ from vault.service.vault_operational_paths import (
     INDEX_NOTE_PATH,
     LOG_NOTE_PATH,
     is_operational_note,
+    log_archive_year,
 )
 
 SCHEMA_NOTE_PATH = "SCHEMA.md"
@@ -196,9 +197,22 @@ class VaultFolderOrganizationService(FrozenModel):
             if note.relative_path in move_paths
             or self._would_rewrite_backlinks(note, replacements, stem_replaces)
         }
-        for path in _OPERATIONAL_NOTE_PATHS:
+        for path in (*_OPERATIONAL_NOTE_PATHS, *self._existing_log_archive_paths()):
             hashes[path] = self._operational_file_hash(path)
         return dict(sorted(hashes.items()))
+
+    def _existing_log_archive_paths(self) -> list[str]:
+        """vault에 이미 있는 log-YYYY.md의 상대 경로 목록입니다.
+
+        archive는 _rewrite_backlinks가 log.md와 똑같이 다시 쓰는 대상이므로 confirmation
+        해시에도 포함해야 한다. 빠지면 dry_run 이후 손으로 고친 archive를 apply가 그대로
+        덮어쓰는데도 confirmation이 무효화되지 않는다.
+        """
+        return sorted(
+            path.name
+            for path in self.note_repository.vault_root.glob("log-*.md")
+            if log_archive_year(path.name) is not None
+        )
 
     def _would_rewrite_backlinks(
         self,
