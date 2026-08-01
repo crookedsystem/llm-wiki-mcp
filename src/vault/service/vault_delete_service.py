@@ -16,11 +16,11 @@ from vault.infrastructure.repository.vault_note_repository import VaultNoteRepos
 from vault.service.command.delete_note_command import DeleteNoteCommand
 from vault.service.result.delete_note_result import DeleteNoteResult, RelatedNoteCandidate
 from vault.service.vault_index_service import VaultIndexService
+from vault.service.vault_log_archiver import VaultLogArchiver
 from vault.service.vault_log_service import LogEntry, VaultLogService
 from vault.service.vault_operational_paths import (
     INDEX_NOTE_PATH,
-    LOG_NOTE_PATH,
-    ROOT_OPERATIONAL_FILES,
+    is_operational_note,
 )
 
 DELETE_SAFETY_NOTICE = (
@@ -159,7 +159,7 @@ class VaultDeleteService(FrozenModel):
         for node in nodes:
             if node.relative_path == target.relative_path:
                 continue
-            if node.relative_path in ROOT_OPERATIONAL_FILES:
+            if is_operational_note(node.relative_path):
                 continue
             for raw_link in node.links:
                 if self._target_key(normalize_wiki_target(raw_link)) not in target_keys:
@@ -192,7 +192,7 @@ class VaultDeleteService(FrozenModel):
                     f"reference cleanup note not found: {Path(note_path).as_posix()}"
                 )
             relative_path = self.note_repository.relative_path(resolved_path)
-            if relative_path in ROOT_OPERATIONAL_FILES:
+            if is_operational_note(relative_path):
                 raise ValueError(
                     f"reference_cleanup_paths must not include operational files: {relative_path}"
                 )
@@ -254,34 +254,36 @@ class VaultDeleteService(FrozenModel):
         return phrase
 
     def _maintain_operational_notes(self, target: _NoteGraphNode) -> list[str]:
-        if target.relative_path in ROOT_OPERATIONAL_FILES:
+        if is_operational_note(target.relative_path):
             return []
 
         timestamp = TimeHelper.format_utc_timestamp(self.clock(), field_name="delete timestamp")
         slug = Path(target.relative_path).with_suffix("").as_posix()
-        written_paths = [
-            self._write_log(
-                LogEntry(
-                    date=timestamp[:10],
-                    action="delete",
-                    slug=slug,
-                    path=target.relative_path,
-                    description=target.title or target.relative_path,
-                    updated=timestamp,
-                )
+        written_paths = self._write_log(
+            LogEntry(
+                date=timestamp[:10],
+                action="delete",
+                slug=slug,
+                path=target.relative_path,
+                description=target.title or target.relative_path,
+                updated=timestamp,
             )
-        ]
+        )
 
         removed_index_path = self._remove_from_index(slug=slug, updated=timestamp)
         if removed_index_path is not None:
             written_paths.append(removed_index_path)
         return [self.note_repository.relative_path(path) for path in written_paths]
 
-    def _write_log(self, entry: LogEntry) -> Path:
-        log_path = self.paths.resolve_note_path(LOG_NOTE_PATH)
-        existing = log_path.read_text(encoding="utf-8") if log_path.exists() else None
-        self._persist(log_path, self.log_service.append_entry(existing, entry))
-        return log_path
+    def _write_log(self, entry: LogEntry) -> list[Path]:
+        log_files = self._log_archiver.append_entries([entry])
+        for log_file in log_files:
+            self._persist(log_file.path, log_file.content)
+        return [log_file.path for log_file in log_files]
+
+    @property
+    def _log_archiver(self) -> VaultLogArchiver:
+        return VaultLogArchiver(vault_root=self.paths.root.resolve(), log_service=self.log_service)
 
     def _remove_from_index(self, *, slug: str, updated: str) -> Path | None:
         index_path = self.paths.resolve_note_path(INDEX_NOTE_PATH)
@@ -309,10 +311,11 @@ class VaultDeleteService(FrozenModel):
         cleanup_nodes: list[_NoteGraphNode],
     ) -> list[_FileSnapshot]:
         paths = [target.path, *(node.path for node in cleanup_nodes)]
-        if target.relative_path not in ROOT_OPERATIONAL_FILES:
+        if not is_operational_note(target.relative_path):
+            # log rotation이 새로 만들 수 있는 log-YYYY.md까지 포함해야 롤백이 완결된다.
             paths.extend(
                 [
-                    self.paths.resolve_note_path(LOG_NOTE_PATH),
+                    *self._log_archiver.rotation_paths([str(self.clock().year)]),
                     self.paths.resolve_note_path(INDEX_NOTE_PATH),
                 ]
             )

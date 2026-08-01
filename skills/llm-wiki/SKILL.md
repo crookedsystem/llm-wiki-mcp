@@ -420,12 +420,15 @@ New entries are appended to the end of their section; the tool does not re-sort 
 # Wiki Log
 
 > Append-only changelog of wiki writes. Newest entries at top.
+> Archived: [[log-2025]], [[log-2026]]
 
 ## [YYYY-MM-DD] create | concepts/llm-wiki
 - Created: `concepts/llm-wiki.md` — Agent-maintained Markdown knowledge base pattern.
 ```
 
 The action is `create` for a new note and `update` for an existing one. Writing `SCHEMA.md`, `index.md`, or `log.md` directly is intentionally skipped from auto-logging so these root files never self-reference.
+
+`log.md` holds only the most recent year so it cannot grow without bound. When a write carries the changelog into a new year, every older entry moves to `log-YYYY.md` in the vault root and the `> Archived:` pointer above links each archived year. Archives keep the same newest-at-top entry format and stay searchable through `kb_search_notes`; they are maintained by the tool, so do not hand-edit them either.
 
 ## Provenance and hash rules
 

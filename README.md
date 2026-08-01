@@ -146,7 +146,8 @@ The vault that `KB_VAULT_PATH` points at is not just a bag of folders — it is 
 KB_VAULT_PATH/
 ├── SCHEMA.md        # vault conventions, page thresholds, tag taxonomy
 ├── index.md         # navigational catalog of synthesized pages
-├── log.md           # append-only audit trail of changes
+├── log.md           # changelog for the current year (older years rotate to log-YYYY.md)
+├── log-YYYY.md      # archived changelog entries for a past year
 ├── raw/             # immutable source material and assets (raw/assets/)
 ├── entities/        # people, orgs, products, models, projects, standards, APIs
 ├── concepts/        # ideas, techniques, mechanisms, topics, principles
