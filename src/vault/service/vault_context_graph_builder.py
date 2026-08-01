@@ -2,6 +2,7 @@ from pathlib import Path
 
 from pydantic import Field
 
+from common.helper.note_metadata_helper import NoteMetadata
 from common.helper.wiki_link_helper import normalize_wiki_target
 from common.model import FrozenModel
 from vault.component.note_cache import NoteContext, VaultNoteCache
@@ -15,6 +16,7 @@ from vault.service.result.context_result import (
     SuggestedLink,
 )
 from vault.service.vault_context_spec import ORIENTATION_PATHS
+from vault.service.vault_search_score_service import VaultSearchScoreService
 
 PROMPT_MEMORY_KINDS = (
     "working_context",
@@ -43,6 +45,7 @@ class ContextGraph(FrozenModel):
 class VaultContextGraphBuilder(FrozenModel):
     note_repository: VaultNoteRepository
     note_cache: VaultNoteCache
+    score_service: VaultSearchScoreService = Field(default_factory=VaultSearchScoreService)
 
     def build_graph(self, command: ContextCommand) -> ContextGraph:
         # Load (and cache) the whole vault once, then derive the scoped view in memory.
@@ -52,9 +55,12 @@ class VaultContextGraphBuilder(FrozenModel):
         scoped_notes = self._scoped_notes(all_notes, command.path_prefix)
         notes_by_path = {note.path: note for note in all_notes}
         note_ids = self._note_ids(all_notes)
+        relevance = self._relevance_scores(scoped_notes, command.query)
 
         if command.mode == "prompt":
-            return self._build_prompt_graph(command, scoped_notes, notes_by_path, note_ids)
+            return self._build_prompt_graph(
+                command, scoped_notes, notes_by_path, note_ids, relevance
+            )
 
         remaining = command.limit
         orientation = self._orientation(notes_by_path, command.query, limit=min(3, remaining))
@@ -63,11 +69,12 @@ class VaultContextGraphBuilder(FrozenModel):
         broken_links = self._broken_links(scoped_notes, note_ids, limit=remaining)
         remaining -= len(broken_links)
 
-        link_targets = self._link_targets(scoped_notes, command.query, limit=remaining)
+        link_targets = self._link_targets(scoped_notes, relevance, command.query, limit=remaining)
         remaining -= len(link_targets)
 
         suggested_links = self._suggested_links(
             scoped_notes,
+            relevance,
             link_targets,
             notes_by_path,
             command.query,
@@ -87,13 +94,15 @@ class VaultContextGraphBuilder(FrozenModel):
         scoped_notes: list[NoteContext],
         notes_by_path: dict[str, NoteContext],
         note_ids: dict[str, str],
+        relevance: dict[str, float],
     ) -> ContextGraph:
         remaining = command.limit
-        link_targets = self._link_targets(scoped_notes, command.query, limit=remaining)
+        link_targets = self._link_targets(scoped_notes, relevance, command.query, limit=remaining)
         remaining -= len(link_targets)
 
         suggested_links = self._suggested_links(
             scoped_notes,
+            relevance,
             link_targets,
             notes_by_path,
             command.query,
@@ -189,9 +198,40 @@ class VaultContextGraphBuilder(FrozenModel):
             key=lambda link: (link.source_path, link.normalized_target),
         )[:limit]
 
+    def _relevance_scores(self, notes: list[NoteContext], query: str) -> dict[str, float]:
+        """질의와 note의 관련도를 kb_search_notes와 같은 scorer로 계산해 경로별로 모읍니다.
+
+        관련도를 정렬 키로 쓰지 않으면 limit이 사실상 경로 알파벳순 컷이 되어, 경로가
+        뒤쪽인 note는 질의와 아무리 맞아도 결과에 도달하지 못합니다.
+        """
+        terms = self._query_terms(query)
+        return {note.path: self._note_score(note, query, terms) for note in notes}
+
+    def _note_score(self, note: NoteContext, query: str, terms: list[str]) -> float:
+        return self.score_service.score_note(
+            note.path,
+            note.content,
+            NoteMetadata(
+                title=note.title,
+                page_type=note.page_type,
+                tags=note.tags,
+                headings=note.headings,
+            ),
+            query,
+            terms,
+        )
+
+    def _by_relevance(
+        self,
+        notes: list[NoteContext],
+        relevance: dict[str, float],
+    ) -> list[NoteContext]:
+        return sorted(notes, key=lambda note: (-relevance.get(note.path, 0.0), note.path))
+
     def _link_targets(
         self,
         notes: list[NoteContext],
+        relevance: dict[str, float],
         query: str,
         *,
         limit: int,
@@ -208,12 +248,17 @@ class VaultContextGraphBuilder(FrozenModel):
 
         return sorted(
             references,
-            key=lambda reference: (self._relation_rank(reference), reference.path),
+            key=lambda reference: (
+                -relevance.get(reference.path, 0.0),
+                self._relation_rank(reference),
+                reference.path,
+            ),
         )[:limit]
 
     def _suggested_links(
         self,
         notes: list[NoteContext],
+        relevance: dict[str, float],
         link_targets: list[ContextReference],
         notes_by_path: dict[str, NoteContext],
         query: str,
@@ -225,7 +270,7 @@ class VaultContextGraphBuilder(FrozenModel):
 
         terms = self._query_terms(query)
         suggestions: list[SuggestedLink] = []
-        for source in notes:
+        for source in self._by_relevance(notes, relevance):
             if not self._matches_terms(source, terms):
                 continue
             linked_targets = {
@@ -277,18 +322,24 @@ class VaultContextGraphBuilder(FrozenModel):
         limit: int,
     ) -> list[PromptCue]:
         terms = self._query_terms(query)
+        matched_cues = [
+            cue
+            for note in notes
+            for cue in self._note_prompt_cues(note)
+            if self._cue_matches_terms(cue, terms)
+        ]
+        # 관련도 순으로 정렬한 뒤에 limit을 적용해야, 경로가 뒤쪽인 note의 cue도 도달할 수 있다.
+        matched_cues.sort(key=lambda cue: (-self._cue_score(cue, query, terms), cue.path))
+
         cues: list[PromptCue] = []
         cues_by_kind: dict[str, int] = {kind: 0 for kind in PROMPT_MEMORY_KINDS}
-        for note in notes:
-            for cue in self._note_prompt_cues(note):
-                if len(cues) >= limit:
-                    return cues
-                if cues_by_kind.get(cue.memory_kind, 0) >= PROMPT_CUE_LIMIT_PER_KIND:
-                    continue
-                if not self._cue_matches_terms(cue, terms):
-                    continue
-                cues.append(cue)
-                cues_by_kind[cue.memory_kind] = cues_by_kind.get(cue.memory_kind, 0) + 1
+        for cue in matched_cues:
+            if len(cues) >= limit:
+                break
+            if cues_by_kind.get(cue.memory_kind, 0) >= PROMPT_CUE_LIMIT_PER_KIND:
+                continue
+            cues.append(cue)
+            cues_by_kind[cue.memory_kind] = cues_by_kind.get(cue.memory_kind, 0) + 1
         return cues
 
     def _note_prompt_cues(self, note: NoteContext) -> list[PromptCue]:
@@ -356,7 +407,21 @@ class VaultContextGraphBuilder(FrozenModel):
         )
 
     def _cue_matches_terms(self, cue: PromptCue, terms: list[str]) -> bool:
-        haystack = " ".join(
+        haystack = self._cue_haystack(cue)
+        return any(term in haystack for term in terms)
+
+    def _cue_score(self, cue: PromptCue, query: str, terms: list[str]) -> float:
+        """cue 본문을 note content 자리에 넣어 note와 같은 scorer로 cue 관련도를 매깁니다."""
+        return self.score_service.score_note(
+            cue.path,
+            self._cue_haystack(cue),
+            NoteMetadata(title=cue.title, page_type=None, tags=[], headings=[]),
+            query,
+            terms,
+        )
+
+    def _cue_haystack(self, cue: PromptCue) -> str:
+        return " ".join(
             value
             for value in (
                 cue.path,
@@ -373,7 +438,6 @@ class VaultContextGraphBuilder(FrozenModel):
             )
             if value
         ).lower()
-        return any(term in haystack for term in terms)
 
     def _target_relation(self, note: NoteContext) -> str | None:
         tags = {tag.lower() for tag in note.tags}

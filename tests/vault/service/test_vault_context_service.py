@@ -330,3 +330,79 @@ def test_context는_path_prefix로_연결_source와_target을_좁히되_orientat
         "log.md",
     ]
     assert [target.path for target in result.link_targets] == ["entities/sample-api.md"]
+
+
+def test_prompt_context는_link_target을_경로순이_아니라_관련도순으로_자른다(
+    tmp_path: Path,
+) -> None:
+    # Given: 흔한 단어만 걸리는 note들이 앞서고, 질의와 정확히 맞는 note는 경로가 맨 뒤다.
+    vault_root = tmp_path / "vault"
+    for decoy_name in ("aardvark-api", "beluga-api", "cormorant-api"):
+        _write_note(
+            vault_root / "entities" / f"{decoy_name}.md",
+            "---\n"
+            f"title: {decoy_name}\n"
+            "type: entity\n"
+            "tags: [project-context]\n"
+            "---\n\n"
+            f"# {decoy_name}\n\n프로젝트 저장소 맥락.\n",
+        )
+    _write_note(
+        vault_root / "entities" / "timelabs.md",
+        "---\n"
+        "title: timelabs\n"
+        "type: entity\n"
+        "tags: [project-context]\n"
+        "---\n\n"
+        "# timelabs\n\ntimelabs 워크스페이스 프로젝트 맥락.\n",
+    )
+
+    # When: 후보 수보다 작은 limit으로 prompt mode context를 요청한다.
+    result = _context_service(vault_root).context(
+        ContextCommand(query="timelabs 프로젝트 워크스페이스", mode="prompt", limit=1)
+    )
+
+    # Then: 알파벳이 앞선 note가 아니라 질의와 맞는 note가 살아남는다.
+    assert [target.path for target in result.link_targets] == ["entities/timelabs.md"]
+
+
+def test_prompt_context는_cue도_경로순이_아니라_관련도순으로_자른다(
+    tmp_path: Path,
+) -> None:
+    # Given: 같은 memory_kind cue가 여러 note에 있고 질의와 맞는 cue의 경로가 맨 뒤다.
+    vault_root = tmp_path / "vault"
+    for decoy_name in ("aardvark-api", "beluga-api", "cormorant-api"):
+        _write_note(
+            vault_root / "entities" / f"{decoy_name}.md",
+            "---\n"
+            f"title: {decoy_name}\n"
+            "type: entity\n"
+            "tags: [project-context]\n"
+            "---\n\n"
+            f"# {decoy_name}\n\n프로젝트 맥락.\n\n"
+            "## Prompt hints\n"
+            f"- kind: project_convention; scope: repo:{decoy_name}; "
+            "applies when: 프로젝트 배포를 준비할 때; "
+            "check before acting: 배포 체크리스트를 확인한다; confidence: high.\n",
+        )
+    _write_note(
+        vault_root / "entities" / "timelabs.md",
+        "---\n"
+        "title: timelabs\n"
+        "type: entity\n"
+        "tags: [project-context]\n"
+        "---\n\n"
+        "# timelabs\n\ntimelabs 프로젝트 맥락.\n\n"
+        "## Prompt hints\n"
+        "- kind: project_convention; scope: repo:timelabs; "
+        "applies when: timelabs 워크스페이스 화면을 수정할 때; "
+        "check before acting: 워크스페이스 라우팅 규칙을 확인한다; confidence: high.\n",
+    )
+
+    # When: cue 후보 수보다 작은 limit으로 prompt mode context를 요청한다.
+    result = _context_service(vault_root).context(
+        ContextCommand(query="timelabs 워크스페이스 프로젝트", mode="prompt", limit=1)
+    )
+
+    # Then: 알파벳이 앞선 cue가 아니라 질의와 맞는 cue가 살아남는다.
+    assert [cue.path for cue in result.prompt_cues] == ["entities/timelabs.md"]
