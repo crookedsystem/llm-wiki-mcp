@@ -11,6 +11,7 @@ from vault.service.command.write_note_command import WriteNoteCommand
 from vault.service.vault_write_service import VaultWriteService
 
 _DEFAULT_CREATED = datetime(2026, 6, 12, 9, 30, 45, tzinfo=UTC)
+_DEFAULT_UPDATED = datetime(2026, 6, 12, 10, 31, 46, tzinfo=UTC)
 
 
 def _write_command(
@@ -19,6 +20,7 @@ def _write_command(
     body: str,
     *,
     created: datetime | None = _DEFAULT_CREATED,
+    updated: datetime = _DEFAULT_UPDATED,
     if_hash: str | None = None,
 ) -> WriteNoteCommand:
     return WriteNoteCommand(
@@ -29,7 +31,7 @@ def _write_command(
         sources=("raw/articles/source.md",),
         body=f"## Summary\n{body}",
         created=created,
-        updated=datetime(2026, 6, 12, 10, 31, 46, tzinfo=UTC),
+        updated=updated,
         if_hash=if_hash,
     )
 
@@ -124,5 +126,39 @@ def test_atomic_batch_write_실패는_log와_index도_롤백한다(tmp_path: Pat
         assert (vault / "index.md").read_text(encoding="utf-8") == index_before
         assert not (vault / "concepts" / "new.md").exists()
         assert "concepts/new" not in (vault / "log.md").read_text(encoding="utf-8")
+
+    asyncio.run(exercise_writer())
+
+
+def test_atomic_batch_write_실패는_새로_만들어진_log_archive도_롤백한다(tmp_path: Path) -> None:
+    async def exercise_writer() -> None:
+        # Given: 2026년 항목이 log에 기록된 vault가 있다.
+        vault = tmp_path / "vault"
+        writer = VaultWriteService(
+            paths=VaultPaths(root=vault), queue=VaultWriteQueue(), actor="tester"
+        )
+        await writer.write_note(_write_command("concepts/existing.md", "Existing", "Original"))
+        log_before = (vault / "log.md").read_text(encoding="utf-8")
+
+        # When / Then: 해가 바뀐 note를 쓰면서 뒤이은 command가 실패한다.
+        next_year = datetime(2027, 1, 4, 0, 0, 0, tzinfo=UTC)
+        with pytest.raises(WriteConflictError, match="stale if_hash"):
+            await writer.batch_write_notes(
+                [
+                    _write_command("concepts/new.md", "New", "New", updated=next_year),
+                    _write_command(
+                        "concepts/existing.md",
+                        "Existing",
+                        "Bad",
+                        created=None,
+                        if_hash="stale",
+                    ),
+                ],
+                atomic=True,
+            )
+
+        # Then: rotation으로 새로 생긴 archive는 삭제되고 log.md도 이전 내용으로 복원된다.
+        assert not (vault / "log-2026.md").exists()
+        assert (vault / "log.md").read_text(encoding="utf-8") == log_before
 
     asyncio.run(exercise_writer())

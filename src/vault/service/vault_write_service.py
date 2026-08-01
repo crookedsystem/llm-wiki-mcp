@@ -13,12 +13,12 @@ from vault.infrastructure.repository.git_repository import GitRepository
 from vault.service.command.write_note_command import WriteNoteCommand
 from vault.service.result.write_note_result import WriteNoteResult
 from vault.service.vault_index_service import IndexEntry, VaultIndexService
+from vault.service.vault_log_archiver import VaultLogArchiver
 from vault.service.vault_log_service import LogEntry, VaultLogService, WriteAction
 from vault.service.vault_note_renderer import VaultNoteRenderer
 from vault.service.vault_operational_paths import (
     INDEX_NOTE_PATH,
-    LOG_NOTE_PATH,
-    ROOT_OPERATIONAL_FILES,
+    is_operational_note,
 )
 
 # Map a note's top-level folder to its canonical index.md section heading.
@@ -105,25 +105,23 @@ class VaultWriteService(FrozenModel):
         existed: bool,
     ) -> list[Path]:
         relative_path = self._relative_note_path(resolved_path)
-        if relative_path in ROOT_OPERATIONAL_FILES:
+        if is_operational_note(relative_path):
             return []
 
         updated = format_note_time(command.updated)
         slug = Path(relative_path).with_suffix("").as_posix()
         action: WriteAction = "update" if existed else "create"
 
-        written = [
-            self._write_log(
-                LogEntry(
-                    date=command.updated.date().isoformat(),
-                    action=action,
-                    slug=slug,
-                    path=relative_path,
-                    description=command.summary or command.title,
-                    updated=updated,
-                )
+        written = self._write_log(
+            LogEntry(
+                date=command.updated.date().isoformat(),
+                action=action,
+                slug=slug,
+                path=relative_path,
+                description=command.summary or command.title,
+                updated=updated,
             )
-        ]
+        )
         section = _SECTION_BY_FOLDER.get(Path(relative_path).parts[0])
         if section is not None:
             written.append(
@@ -139,11 +137,15 @@ class VaultWriteService(FrozenModel):
             )
         return written
 
-    def _write_log(self, entry: LogEntry) -> Path:
-        log_path = self.paths.resolve_note_path(LOG_NOTE_PATH)
-        existing = log_path.read_text(encoding="utf-8") if log_path.exists() else None
-        self._persist(log_path, self.log_service.append_entry(existing, entry))
-        return log_path
+    def _write_log(self, entry: LogEntry) -> list[Path]:
+        log_files = self._log_archiver.append_entries([entry])
+        for log_file in log_files:
+            self._persist(log_file.path, log_file.content)
+        return [log_file.path for log_file in log_files]
+
+    @property
+    def _log_archiver(self) -> VaultLogArchiver:
+        return VaultLogArchiver(vault_root=self.paths.root.resolve(), log_service=self.log_service)
 
     def _write_index(self, entry: IndexEntry) -> Path:
         index_path = self.paths.resolve_note_path(INDEX_NOTE_PATH)
@@ -174,17 +176,21 @@ class VaultWriteService(FrozenModel):
     def _snapshot_affected(self, commands: list[WriteNoteCommand]) -> list[_FileSnapshot]:
         paths: list[Path] = []
         seen: set[Path] = set()
-        maintains_graph = False
+        entry_years: list[str] = []
         for command in commands:
             resolved_path = self.paths.resolve_note_path(command.note_path)
             if resolved_path not in seen:
                 seen.add(resolved_path)
                 paths.append(resolved_path)
-            if self._relative_note_path(resolved_path) not in ROOT_OPERATIONAL_FILES:
-                maintains_graph = True
-        if maintains_graph:
-            for operational_name in (LOG_NOTE_PATH, INDEX_NOTE_PATH):
-                resolved_path = self.paths.resolve_note_path(operational_name)
+            if not is_operational_note(self._relative_note_path(resolved_path)):
+                entry_years.append(str(command.updated.year))
+        if entry_years:
+            # log rotation이 새로 만들 수 있는 log-YYYY.md까지 포함해야 롤백이 완결된다.
+            operational_paths = [
+                self.paths.resolve_note_path(INDEX_NOTE_PATH),
+                *self._log_archiver.rotation_paths(entry_years),
+            ]
+            for resolved_path in operational_paths:
                 if resolved_path not in seen:
                     seen.add(resolved_path)
                     paths.append(resolved_path)

@@ -331,3 +331,70 @@ def test_write_command는_summary의_줄바꿈과_빈값을_거부하고_공백�
 
     # When: 앞뒤 공백이 있는 summary를 넘기면 정리된 한 줄 값으로 저장된다.
     assert _write_command(summary="  trimmed summary  ").summary == "trimmed summary"
+
+
+def test_note_작성은_연도가_넘어가면_지난_연도_log를_archive로_분리한다(tmp_path: Path) -> None:
+    async def exercise_writer() -> None:
+        # Given: 2026년 항목이 log에 기록된 vault가 있다.
+        vault = tmp_path / "vault"
+        writer = VaultWriteService(paths=VaultPaths(root=vault), queue=VaultWriteQueue())
+        await writer.write_note(_write_command(note_path="concepts/old.md", title="Old"))
+
+        # When: 해가 바뀐 시점에 새 note를 작성한다.
+        next_year = datetime(2027, 1, 4, 0, 0, 0, tzinfo=UTC)
+        await writer.write_note(
+            _write_command(
+                note_path="concepts/new.md",
+                title="New",
+                created=next_year,
+                updated=next_year,
+            )
+        )
+
+        # Then: log.md에는 새 해 항목과 archive 포인터만 남고 지난 해 항목은 log-2026.md로 옮겨진다.
+        log_content = (vault / "log.md").read_text(encoding="utf-8")
+        archive_content = (vault / "log-2026.md").read_text(encoding="utf-8")
+        assert "## [2027-01-04] create | concepts/new" in log_content
+        assert "concepts/old" not in log_content
+        assert "> Archived: [[log-2026]]" in log_content
+        assert "## [2026-06-12] create | concepts/old" in archive_content
+        assert "kb-provenance" in archive_content
+
+    asyncio.run(exercise_writer())
+
+
+def test_note_작성은_뒤늦은_지난_연도_항목을_기존_archive에_합친다(tmp_path: Path) -> None:
+    async def exercise_writer() -> None:
+        # Given: rotation으로 log-2026.md가 이미 만들어진 vault가 있다.
+        vault = tmp_path / "vault"
+        writer = VaultWriteService(paths=VaultPaths(root=vault), queue=VaultWriteQueue())
+        await writer.write_note(_write_command(note_path="concepts/june.md", title="June"))
+        next_year = datetime(2027, 1, 4, 0, 0, 0, tzinfo=UTC)
+        await writer.write_note(
+            _write_command(
+                note_path="concepts/new.md",
+                title="New",
+                created=next_year,
+                updated=next_year,
+            )
+        )
+
+        # When: 지난 해 날짜를 가진 note를 뒤늦게 작성한다.
+        late_december = datetime(2026, 12, 31, 23, 0, 0, tzinfo=UTC)
+        await writer.write_note(
+            _write_command(
+                note_path="concepts/december.md",
+                title="December",
+                created=late_december,
+                updated=late_december,
+            )
+        )
+
+        # Then: 기존 archive를 덮어쓰지 않고 합쳐 최신 항목이 위에 온다.
+        archive_content = (vault / "log-2026.md").read_text(encoding="utf-8")
+        assert "concepts/june" in archive_content
+        assert archive_content.index("concepts/december") < archive_content.index("concepts/june")
+        assert archive_content.count("# Wiki Log 2026") == 1
+        assert (vault / "log.md").read_text(encoding="utf-8").count("> Archived:") == 1
+
+    asyncio.run(exercise_writer())

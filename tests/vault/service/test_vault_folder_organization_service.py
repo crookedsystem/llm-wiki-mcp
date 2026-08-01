@@ -433,3 +433,60 @@ def test_organize_folders는_type과_top_folder_불일치를_바로잡는다(tmp
         assert "type 'entity' belongs under entities/" in preview.moves[0].reason
 
     asyncio.run(exercise())
+
+
+def _write_log_archive(vault: Path, body: str) -> None:
+    (vault / "log-2026.md").write_text(
+        _operational_note("Wiki Log 2026", "log", f"\n# Wiki Log 2026\n\n{body}\n"),
+        encoding="utf-8",
+    )
+
+
+def test_organize_folders는_log_archive의_backlink도_함께_고쳐쓴다(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        vault = tmp_path / "vault"
+        _write_direct_notes(vault)
+        _write_log_archive(vault, "- Created: [[entities/product-0|Product 0]]")
+        service = _service(vault)
+
+        preview = await service.organize_folders(OrganizeFoldersCommand(root_folder="entities"))
+        await service.organize_folders(
+            OrganizeFoldersCommand(
+                root_folder="entities",
+                dry_run=False,
+                confirm=preview.confirmation_phrase,
+            )
+        )
+
+        archive = (vault / "log-2026.md").read_text(encoding="utf-8")
+        assert "[[entities/products/product-0|Product 0]]" in archive
+
+    asyncio.run(exercise())
+
+
+def test_organize_folders는_dry_run_이후_log_archive가_바뀌면_confirmation을_거부한다(
+    tmp_path: Path,
+) -> None:
+    async def exercise() -> None:
+        vault = tmp_path / "vault"
+        _write_direct_notes(vault)
+        _write_log_archive(vault, "- Created: [[entities/product-0|Product 0]]")
+        service = _service(vault)
+
+        preview = await service.organize_folders(OrganizeFoldersCommand(root_folder="entities"))
+        # archive도 apply가 backlink를 고쳐쓰므로 손 편집이 confirmation을 무효화해야 한다.
+        _write_log_archive(vault, "- Created: [[entities/product-0|Product 0]] (hand edited)")
+
+        with pytest.raises(
+            PermissionError,
+            match="confirm must exactly match confirmation_phrase",
+        ):
+            await service.organize_folders(
+                OrganizeFoldersCommand(
+                    root_folder="entities",
+                    dry_run=False,
+                    confirm=preview.confirmation_phrase,
+                )
+            )
+
+    asyncio.run(exercise())
